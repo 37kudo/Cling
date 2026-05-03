@@ -7,7 +7,7 @@ import os.log
 
 private let slog = Logger(subsystem: "com.lowtechguys.Cling", category: "SearchEngine")
 
-// MARK: - Scoring Constants (fzf path scheme)
+// MARK: - ScoringConfig
 
 struct ScoringConfig: Codable, Equatable {
     static let `default` = ScoringConfig()
@@ -71,7 +71,7 @@ func reloadScoringConfig() {
     rebuildBonusFlat()
 }
 
-// MARK: - Character Classes
+// MARK: - CC
 
 private enum CC: Int { case white = 0, nonWord, delim, lower, upper, letter, number }
 private let ccCount = 7
@@ -315,7 +315,7 @@ private func letterMaskBytes(_ p: UnsafeBufferPointer<UInt8>) -> UInt64 {
     return m
 }
 
-// MARK: - Search Result
+// MARK: - SearchResult
 
 struct SearchResult: Comparable {
     let path: String
@@ -829,7 +829,8 @@ final class SearchEngine: @unchecked Sendable {
             pathToID[entries[i].path] = i
         }
         let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        slog.debug("buildPathIndex: \(self.pathToID.count) entries in \(ms, format: .fixed(precision: 1))ms")
+        let count = pathToID.count
+        slog.debug("buildPathIndex: \(count) entries in \(ms, format: .fixed(precision: 1))ms")
     }
 
     /// Build sorted path index for O(log n) prefix lookups. Call after index loading.
@@ -1394,6 +1395,7 @@ final class SearchEngine: @unchecked Sendable {
         excludedPaths: Set<String>? = nil,
         suffixPattern: String? = nil,
         dirsOnly: Bool = false,
+        maxDepth: Int? = nil,
         candidatePool: [Int]? = nil,
         cancelled: (() -> Bool)? = nil
     ) -> [SearchResult] {
@@ -1416,6 +1418,7 @@ final class SearchEngine: @unchecked Sendable {
         func isExtToken(_ t: Substring) -> Bool { t.hasPrefix(".") || t.hasPrefix("*.") }
         func extString(_ t: Substring) -> String { t.hasPrefix("*.") ? "." + t.dropFirst(2) : String(t) }
         func isInToken(_ t: Substring) -> Bool { t.hasPrefix("in:") && t.count > 3 }
+        func isDepthToken(_ t: Substring) -> Bool { t.hasPrefix("depth:") && t.count > 6 }
         let homePath = FileManager.default.homeDirectoryForCurrentUser.path
         let inPrefixes: [String] = qTokens.compactMap { token -> String? in
             guard isInToken(token) else { return nil }
@@ -1423,6 +1426,10 @@ final class SearchEngine: @unchecked Sendable {
             if path.hasPrefix("~") { path = homePath + path.dropFirst() }
             while path.count > 1, path.hasSuffix("/") { path = String(path.dropLast()) }
             return path
+        }
+        let queryDepths: [Int] = qTokens.compactMap { token -> Int? in
+            guard isDepthToken(token) else { return nil }
+            return Int(token.dropFirst(6))
         }
         let extTokenBytes: [[UInt8]] = qTokens.compactMap { isExtToken($0) ? Array(extString($0).utf8) : nil }
         // Pre-resolve extension IDs for O(1) matching (UInt16 compare vs byte-by-byte suffix)
@@ -1434,7 +1441,15 @@ final class SearchEngine: @unchecked Sendable {
         // Dir-segment tokens like "rcmd/" require a literal substring "rcmd/" in the path (not fuzzy).
         func isDirSegment(_ t: Substring) -> Bool { t.hasSuffix("/") && t.count > 1 }
         let dirSegments: [[UInt8]] = qTokens.compactMap { isDirSegment($0) ? Array(String($0).utf8) : nil }
-        let fuzzyTokens = qTokens.filter { !isExtToken($0) && !isInToken($0) && !isDirSegment($0) }.map(String.init)
+        let fuzzyTokens = qTokens.filter { !isExtToken($0) && !isInToken($0) && !isDirSegment($0) && !isDepthToken($0) }.map(String.init)
+        // Effective depth limit: smallest of query depth tokens and the explicit parameter
+        let effectiveMaxDepth: Int? = {
+            var v = maxDepth
+            for d in queryDepths {
+                v = v.map { min($0, d) } ?? d
+            }
+            return v
+        }()
         let q = fuzzyTokens.joined()
         // Dirs-only when the query is solely dir segments (e.g. "rcmd/" with no fuzzy/ext tokens)
         let dirsOnly = dirsOnly || (!dirSegments.isEmpty && fuzzyTokens.isEmpty && extTokenBytes.isEmpty)
@@ -1507,7 +1522,43 @@ final class SearchEngine: @unchecked Sendable {
         }()
         // Pre-convert prefixes to lowercased byte arrays (allBytes stores lowercased paths)
         let folderPrefixBytes: [[UInt8]]? = allFolderPrefixes?.map { Array($0.lowercased().utf8) }
+        // Match the indexer's segCount convention: 1 + number of slashes (with trailing slashes trimmed),
+        // except root "/" which is 1.
+        let folderPrefixSegCounts: [Int]? = allFolderPrefixes?.map { p -> Int in
+            if p == "/" { return 1 }
+            var s = p
+            while s.count > 1, s.hasSuffix("/") { s.removeLast() }
+            var n = 1
+            for c in s where c == "/" { n &+= 1 }
+            return n
+        }
         let excludedPrefixBytes: [[UInt8]]? = excludedPrefixes?.map { Array($0.lowercased().utf8) }
+
+        @inline(__always) func depthOK(_ i: Int) -> Bool {
+            guard let maxD = effectiveMaxDepth else { return true }
+            // Default base = 1 (root "/"), so entries directly at root have depth 0
+            var base = 1
+            if let prefixes = folderPrefixBytes, let segs = folderPrefixSegCounts {
+                let off = byteOffsets[i]
+                let len = byteLengths[i]
+                var pi = 0
+                while pi < prefixes.count {
+                    let prefix = prefixes[pi]
+                    if len >= prefix.count {
+                        var ok = true
+                        var j = 0
+                        while j < prefix.count {
+                            if allBytes[off + j] != prefix[j] { ok = false; break }
+                            j &+= 1
+                        }
+                        if ok, segs[pi] > base { base = segs[pi] }
+                    }
+                    pi &+= 1
+                }
+            }
+            let d = entries[i].segCount - base - 1
+            return d <= maxD
+        }
 
         // Phase 1: candidate filter
         let t1 = CFAbsoluteTimeGetCurrent()
@@ -1662,7 +1713,7 @@ final class SearchEngine: @unchecked Sendable {
             var pi = 0
             while pi < pool.count {
                 let i = pool[pi]
-                if applyBaseFilters(i), matchesFolderPrefix(i) { cands.append(i) }
+                if applyBaseFilters(i), matchesFolderPrefix(i), depthOK(i) { cands.append(i) }
                 pi &+= 1
             }
         } else if let prefixBytes = folderPrefixBytes, let sorted = sortedByPath {
@@ -1675,7 +1726,7 @@ final class SearchEngine: @unchecked Sendable {
                 var idx = lo
                 while idx < hi {
                     let i = sorted[idx]
-                    if applyAllFilters(i) { cands.append(i) }
+                    if applyAllFilters(i), depthOK(i) { cands.append(i) }
                     idx &+= 1
                 }
                 pxi &+= 1
@@ -1816,6 +1867,8 @@ final class SearchEngine: @unchecked Sendable {
                             }
                             if !allFound { i &+= 1; continue }
                         }
+
+                        if !depthOK(i) { i &+= 1; continue }
 
                         local.append(i)
                         i &+= 1

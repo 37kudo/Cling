@@ -27,7 +27,7 @@ private let FILE_OPEN_EXISTING: UInt32 = 0x0001
 private let FILE_CREATE_OPTIONS_NONE: UInt32 = 0x0000_0000
 private let FILE_CREATE_OPTIONS_DIRECTORY: UInt32 = 0x0000_0001
 
-// MARK: - Wire struct (MS-FSCC 2.4.17)
+// MARK: - FileIdBothDirInfo
 
 private struct FileIdBothDirInfo {
     var nextEntryOffset: UInt32
@@ -65,7 +65,7 @@ private func filetimeToDate(_ ft: Int64) -> Date {
     return Date(timeIntervalSince1970: seconds)
 }
 
-// MARK: - SMB file metadata cache
+// MARK: - SMBFileMetadata
 
 struct SMBFileMetadata: Codable {
     let size: Int64
@@ -76,6 +76,8 @@ struct SMBFileMetadata: Codable {
 func smbMetadataCacheFile(_ volume: FilePath) -> FilePath {
     indexFolder / "\(volume.name.string.replacingOccurrences(of: " ", with: "-"))-smb-meta.json"
 }
+
+// MARK: - SMBMetadataCache
 
 final class SMBMetadataCache {
     var count: Int {
@@ -122,7 +124,7 @@ final class SMBMetadataCache {
 
 }
 
-// MARK: - SMBClient.framework loader
+// MARK: - SMBFramework
 
 private enum SMBFramework {
     typealias SMBOpenServerWithMountPoint = @convention(c) (
@@ -181,11 +183,20 @@ private enum SMBFramework {
 
 }
 
-// MARK: - Sendable wrappers
+// MARK: - SendableConnection
 
 private struct SendableConnection: @unchecked Sendable { let raw: SMBHANDLE }
+
+// MARK: - SendableQueryFn
+
 private struct SendableQueryFn: @unchecked Sendable { let fn: SMBFramework.SMBQueryDir }
+
+// MARK: - SendableCreateFn
+
 private struct SendableCreateFn: @unchecked Sendable { let fn: SMBFramework.SMBCreateFile }
+
+// MARK: - SendableCloseFn
+
 private struct SendableCloseFn: @unchecked Sendable { let fn: SMBFramework.SMBCloseFile }
 
 // MARK: - Helpers
@@ -290,7 +301,7 @@ private func openDirectoryHandle(
     throw SMBWalkError.openDirectoryFailed(path: logicalPath, status: lastFailure)
 }
 
-// MARK: - Buffer parsing
+// MARK: - DirPage
 
 private struct DirPage {
     let paths: [(path: String, isDir: Bool, size: Int64, modDate: Date, createDate: Date)]
@@ -438,7 +449,7 @@ private func querySingleDirectory(
     return DirPage(paths: allPaths, subdirectories: allSubdirs)
 }
 
-// MARK: - Errors
+// MARK: - SMBWalkError
 
 enum SMBWalkError: Error, CustomStringConvertible {
     case frameworkNotLoaded

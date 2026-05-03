@@ -5,6 +5,8 @@ import os.log
 
 private let cliLog = Logger(subsystem: "com.lowtechguys.Cling", category: "CLIService")
 
+// MARK: - SearchCoordinator
+
 /// Thread-safe search coordinator for multi-engine queries from any thread.
 final class SearchCoordinator: @unchecked Sendable {
     struct EngineEntry {

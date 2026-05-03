@@ -3,6 +3,8 @@ import Foundation
 import OSLog
 import UniformTypeIdentifiers
 
+// MARK: - FullDiskAccess
+
 // A helper for managing Full Disk Access (FDA). An app that's granted FDA can access other apps' containers.
 // Checking whether FDA is granted will add the app to the FDA entries in Privacy & Security (an exception to that is
 // macOS 10.14 for which we cannot automatically add the entry)

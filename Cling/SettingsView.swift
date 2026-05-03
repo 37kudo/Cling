@@ -16,6 +16,8 @@ extension Binding<Int> {
 
 let envState = EnvState()
 
+// MARK: - SettingsCategory
+
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general, apps, search, exclusions, about
 
@@ -51,6 +53,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         }
     }
 }
+
+// MARK: - SettingsView
 
 struct SettingsView: View {
     @State private var selection: SettingsCategory = .general
@@ -95,7 +99,7 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Row helpers
+// MARK: - SettingRow
 
 private struct SettingRow<Label: View, Control: View>: View {
     init(
@@ -136,6 +140,8 @@ private struct SettingRow<Label: View, Control: View>: View {
     }
 }
 
+// MARK: - DescriptiveToggle
+
 private struct DescriptiveToggle: View {
     let title: String
     let detail: String
@@ -149,7 +155,7 @@ private struct DescriptiveToggle: View {
     }
 }
 
-// MARK: - General Pane
+// MARK: - GeneralSettingsPane
 
 private struct GeneralSettingsPane: View {
     @Default(.showWindowAtLaunch) private var showWindowAtLaunch
@@ -271,7 +277,7 @@ private struct GeneralSettingsPane: View {
     }
 }
 
-// MARK: - Apps Pane
+// MARK: - AppsSettingsPane
 
 private struct AppsSettingsPane: View {
     var body: some View {
@@ -339,7 +345,7 @@ private struct AppsSettingsPane: View {
 
 }
 
-// MARK: - Search Pane
+// MARK: - SearchSettingsPane
 
 private struct SearchSettingsPane: View {
     @Default(.maxResultsCount) private var maxResultsCount
@@ -518,7 +524,7 @@ private struct SearchSettingsPane: View {
     }
 }
 
-// MARK: - Exclusions Pane
+// MARK: - ExclusionsSettingsPane
 
 private struct ExclusionsSettingsPane: View {
     @Default(.blockedPrefixes) private var blockedPrefixes
@@ -682,7 +688,7 @@ private struct ExclusionsSettingsPane: View {
     }
 }
 
-// MARK: - About Pane
+// MARK: - AboutSettingsPane
 
 private struct AboutSettingsPane: View {
     @ObservedObject var updateManager = UM
@@ -769,7 +775,7 @@ private struct AboutSettingsPane: View {
     }
 }
 
-// MARK: - Helpers (unchanged)
+// MARK: - VolumeIgnoreEditor
 
 struct VolumeIgnoreEditor: View {
     init(volume: FilePath) {
@@ -823,6 +829,8 @@ struct VolumeIgnoreEditor: View {
     private var fsignorePath: FilePath { volume / ".fsignore" }
 
 }
+
+// MARK: - IgnoreHelpText
 
 struct IgnoreHelpText: View {
     var body: some View {
@@ -892,6 +900,8 @@ extension URL {
     }
 }
 
+// MARK: - FilePath + @retroactive Comparable
+
 extension FilePath: @retroactive Comparable {
     public static func < (lhs: FilePath, rhs: FilePath) -> Bool {
         lhs.string < rhs.string
@@ -933,6 +943,8 @@ extension FilePath: @retroactive Comparable {
         )
     }
 }
+
+// MARK: - VolumeListView
 
 struct VolumeListView: View {
     var body: some View {
@@ -1052,6 +1064,8 @@ struct VolumeListView: View {
     @Default(.disabledVolumes) private var disabledVolumes
 }
 
+// MARK: - ReindexTimeIntervalSlider
+
 struct ReindexTimeIntervalSlider: View {
     var volume: FilePath
 
@@ -1113,6 +1127,8 @@ extension TimeInterval {
     }
 }
 
+// MARK: - ProBadge
+
 struct ProBadge: View {
     var body: some View {
         Text("PRO")
@@ -1123,6 +1139,8 @@ struct ProBadge: View {
             .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Color.orange))
     }
 }
+
+// MARK: - SettingsCardGroupBoxStyle
 
 struct SettingsCardGroupBoxStyle: GroupBoxStyle {
     func makeBody(configuration: Configuration) -> some View {

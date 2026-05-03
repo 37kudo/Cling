@@ -3,6 +3,8 @@ import Lowtech
 import SwiftUI
 import System
 
+// MARK: - ActionButtons
+
 struct ActionButtons: View {
     @Binding var selectedResults: Set<FilePath>
     @Binding var selectedResultIDs: Set<String>
@@ -383,6 +385,8 @@ struct ActionButtons: View {
     @State private var isPresentingCopyToSheet = false
     @State private var isPresentingMoveToSheet = false
 }
+
+// MARK: - FileOperationSheet
 
 struct FileOperationSheet: View {
     init(operation: Operation, files: [FilePath], onComplete: @escaping (Set<FilePath>) -> Void = { _ in }) {

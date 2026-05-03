@@ -4,6 +4,8 @@ import SwiftUI
 
 let SHARING_MANAGER = SharingManager()
 
+// MARK: - ShareButton
+
 struct ShareButton: View {
     var urls: [URL]
 

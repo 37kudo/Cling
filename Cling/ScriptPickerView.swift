@@ -5,6 +5,8 @@ import SwiftUI
 import System
 import UniformTypeIdentifiers
 
+// MARK: - ScriptPickerView
+
 struct ScriptPickerView: View {
     let fileURLs: [URL]
     @Environment(\.dismiss) var dismiss
@@ -127,6 +129,8 @@ struct ScriptPickerView: View {
         scriptManager.fetchScripts() // Update scripts and shortcuts
     }
 }
+
+// MARK: - ScriptActionButtons
 
 struct ScriptActionButtons: View {
     let selectedResults: Set<FilePath>
@@ -381,6 +385,8 @@ struct ScriptActionButtons: View {
 
 }
 
+// MARK: - ScriptRowButton
+
 private struct ScriptRowButton: View {
     let script: URL
     let scriptManager: ScriptManager
@@ -459,6 +465,8 @@ extension URL {
     }
 }
 
+// MARK: - AddScriptView
+
 struct AddScriptView: View {
     @Binding var name: String
     @Binding var selectedRunner: ScriptRunner?
@@ -512,6 +520,8 @@ struct AddScriptView: View {
 
     @Environment(\.dismiss) private var dismiss
 }
+
+// MARK: - ScriptRunner
 
 enum ScriptRunner: String, CaseIterable {
     case sh
@@ -696,6 +706,8 @@ enum ScriptRunner: String, CaseIterable {
     }
 }
 
+// MARK: - ScriptOutputText
+
 /// Uses `Text` for small output, `NSTextView` wrapper for large output to stay responsive.
 struct ScriptOutputText: View {
     let text: String
@@ -715,6 +727,8 @@ struct ScriptOutputText: View {
         }
     }
 }
+
+// MARK: - LargeTextView
 
 struct LargeTextView: NSViewRepresentable {
     let text: String

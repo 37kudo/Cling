@@ -3,10 +3,14 @@ import Lowtech
 import SwiftUI
 import System
 
+// MARK: - WindowMode
+
 enum WindowMode: String, CaseIterable {
     case utility = "Utility"
     case desktopApp = "Desktop App"
 }
+
+// MARK: - OnboardingView
 
 struct OnboardingView: View {
     var body: some View {

@@ -21,6 +21,8 @@ let DUST = Bundle.main.url(forResource: "dust", withExtension: nil)!.filePath!
 let TREE = Bundle.main.url(forResource: "tree", withExtension: nil)!.filePath!
 let TREEDIFF = Bundle.main.url(forResource: "treediff", withExtension: nil)!.filePath!
 
+// MARK: - ScriptManager
+
 @Observable
 class ScriptManager {
     init() {

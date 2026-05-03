@@ -5,6 +5,8 @@ extension Defaults.Keys {
     static let searchHistory = Key<[String]>("searchHistory", default: [])
 }
 
+// MARK: - SearchHistory
+
 @MainActor @Observable
 final class SearchHistory {
     static let shared = SearchHistory()

@@ -2,6 +2,8 @@ import Lowtech
 import SwiftUI
 import System
 
+// MARK: - OpenWithMenuView
+
 struct OpenWithMenuView: View {
     let fileURLs: [URL]
 
@@ -23,6 +25,8 @@ struct OpenWithMenuView: View {
     }
 
 }
+
+// MARK: - OpenWithPickerView
 
 struct OpenWithPickerView: View {
     let fileURLs: [URL]
@@ -92,6 +96,8 @@ struct OpenWithPickerView: View {
         .frame(maxHeight: 500)
     }
 }
+
+// MARK: - OpenWithActionButtons
 
 struct OpenWithActionButtons: View {
     let selectedResults: Set<FilePath>

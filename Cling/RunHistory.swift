@@ -6,6 +6,8 @@ extension Defaults.Keys {
     static let runHistory = Key<[String: RunHistory.Entry]>("runHistory", default: [:])
 }
 
+// MARK: - RunHistory
+
 @MainActor @Observable
 final class RunHistory {
     struct Entry: Codable, Defaults.Serializable {

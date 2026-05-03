@@ -3,6 +3,8 @@ import Lowtech
 import SwiftUI
 import System
 
+// MARK: - RenameView
+
 struct RenameView: View {
     init(originalPaths: [FilePath], renamedPaths: Binding<[FilePath]?>) {
         let sorted = originalPaths.sorted { $0.string < $1.string }

@@ -9,6 +9,8 @@ import Foundation
 
 public let CLING_PORT_ID = "com.lowtechguys.Cling.cli" as CFString
 
+// MARK: - ClingCommand
+
 public enum ClingCommand: String, Codable {
     case search
     case index // backwards compat
@@ -20,6 +22,8 @@ public enum ClingCommand: String, Codable {
     case indexRemove
     case indexHas
 }
+
+// MARK: - ClingRequest
 
 public struct ClingRequest: Codable {
     public init(
@@ -62,6 +66,8 @@ public struct ClingRequest: Codable {
 
 }
 
+// MARK: - ClingSearchResult
+
 public struct ClingSearchResult: Codable {
     public init(path: String, isDir: Bool, score: Int, quality: Int) {
         self.path = path
@@ -76,6 +82,8 @@ public struct ClingSearchResult: Codable {
     public let quality: Int
 
 }
+
+// MARK: - ClingScopeStatus
 
 public struct ClingScopeStatus: Codable {
     public init(
@@ -114,6 +122,8 @@ public struct ClingScopeStatus: Codable {
 
 }
 
+// MARK: - ClingVolumeStatus
+
 public struct ClingVolumeStatus: Codable {
     public init(
         name: String,
@@ -148,6 +158,8 @@ public struct ClingVolumeStatus: Codable {
     public var lastIndexedAt: Double?
 
 }
+
+// MARK: - ClingResponse
 
 public struct ClingResponse: Codable {
     public init(

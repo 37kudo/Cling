@@ -18,6 +18,8 @@ private func volumeCheckpointFile(_ volume: FilePath) -> URL {
     volumeIndexFile(volume).url.deletingPathExtension().appendingPathExtension("checkpoint")
 }
 
+// MARK: - VolumeIndexBatchTracker
+
 private final class VolumeIndexBatchTracker: @unchecked Sendable {
     init(count: Int, onFinish: (@MainActor () -> Void)?) {
         remaining = count

@@ -34,9 +34,13 @@ let dateFormat = Date.FormatStyle
     .dateTime.year(.padded(4)).month().day(.twoDigits)
     .hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits)
 
+// MARK: - FocusedField
+
 enum FocusedField {
     case search, list, openWith, executeScript
 }
+
+// MARK: - ContentView
 
 struct ContentView: View {
     @Environment(\.dismiss) var dismiss
@@ -726,7 +730,7 @@ struct ContentView: View {
     }
 
     private var searchBar: some View {
-        TextField("Search", text: $fuzzy.query)
+        TextField(placeholderHint, text: $fuzzy.query)
             .textFieldStyle(.plain)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -760,7 +764,36 @@ struct ContentView: View {
                 suggestionIndex: $suggestionIndex,
                 historySuggestions: historySuggestions
             ))
+            .task(id: shouldCyclePlaceholder) {
+                guard shouldCyclePlaceholder else {
+                    placeholderHint = "Search"
+                    return
+                }
+                while !Task.isCancelled, shouldCyclePlaceholder {
+                    placeholderHint = ContentView.placeholderExamples[placeholderIndex]
+                    placeholderIndex = (placeholderIndex + 1) % ContentView.placeholderExamples.count
+                    try? await Task.sleep(nanoseconds: 3_500_000_000)
+                }
+            }
     }
+
+    @State private var placeholderHint = "Search"
+    @State private var placeholderIndex = 0
+
+    private var shouldCyclePlaceholder: Bool {
+        fuzzy.query.isEmpty && wm.mainWindowActive
+    }
+
+    private static let placeholderExamples = [
+        "Search",
+        "Example: report 2024 .pdf",
+        "Example: .png .jpg",
+        "Example: in:~/Downloads .dmg",
+        "Example: depth:1 in:~/Projects",
+        "Example: config/ .toml .yaml",
+        "Example: *.swift in:~/Projects",
+        "Example: invoice .pdf",
+    ]
 
     private var xButton: some View {
         Button(action: {
@@ -1058,6 +1091,8 @@ struct ContentView: View {
     }
 }
 
+// MARK: - FilePathBackgroundTasks
+
 @MainActor
 class FilePathBackgroundTasks {
     static let shared = FilePathBackgroundTasks()
@@ -1209,6 +1244,8 @@ func getPro() {
     }
 }
 
+// MARK: - NeedsProView
+
 struct NeedsProView: View {
     var size: CGFloat = 12
     var color: Color = .secondary
@@ -1268,6 +1305,8 @@ extension View {
         }.any
     }
 }
+
+// MARK: - SearchBarKeyHandlers
 
 struct SearchBarKeyHandlers: ViewModifier {
     var focused: FocusState<FocusedField?>.Binding
@@ -1362,6 +1401,8 @@ struct SearchBarKeyHandlers: ViewModifier {
             }
     }
 }
+
+// MARK: - RunHistoryRow
 
 struct RunHistoryRow: Identifiable {
     let path: FilePath

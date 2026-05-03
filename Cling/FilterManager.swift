@@ -4,6 +4,8 @@ import Lowtech
 import SwiftUI
 import System
 
+// MARK: - QuickFilterAddSheet
+
 struct QuickFilterAddSheet: View {
     @EnvironmentObject var env: EnvState
 
@@ -95,6 +97,8 @@ struct QuickFilterAddSheet: View {
     }
 }
 
+// MARK: - QuickFilterEditorView
+
 struct QuickFilterEditorView: View {
     var label: String? = nil
 
@@ -126,6 +130,8 @@ struct QuickFilterEditorView: View {
     }
 }
 
+// MARK: - FolderFilterEditorView
+
 struct FolderFilterEditorView: View {
     var label: String? = nil
 
@@ -156,9 +162,13 @@ struct FolderFilterEditorView: View {
     }
 }
 
+// MARK: - FilePath + @retroactive Identifiable
+
 extension FilePath: @retroactive Identifiable {
     public var id: String { string }
 }
+
+// MARK: - FolderFilterAddSheet
 
 struct FolderFilterAddSheet: View {
     @EnvironmentObject var env: EnvState

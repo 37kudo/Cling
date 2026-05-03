@@ -5,11 +5,15 @@ import Lowtech
 import SwiftUI
 import System
 
+// MARK: - DefaultResultsMode
+
 enum DefaultResultsMode: String, CaseIterable, Defaults.Serializable {
     case recentFiles = "Recent Files"
     case runHistory = "Run History"
     case empty = "Empty"
 }
+
+// MARK: - FilePath + Defaults.Serializable, @retroactive LosslessStringConvertible
 
 extension FilePath: Defaults.Serializable, @retroactive LosslessStringConvertible {
     public init?(from defaultsValue: String) {
@@ -20,6 +24,8 @@ extension FilePath: Defaults.Serializable, @retroactive LosslessStringConvertibl
         string
     }
 }
+
+// MARK: - Character + @retroactive Codable
 
 extension Character: @retroactive Codable {
     public init(from decoder: Decoder) throws {
@@ -37,19 +43,51 @@ extension Character: @retroactive Codable {
     }
 }
 
+// MARK: - FolderFilter
+
 struct FolderFilter: Identifiable, Hashable, Codable, Defaults.Serializable {
+    init(id: String, folders: [FilePath], key: Character?, maxDepth: Int? = nil) {
+        self.id = id
+        self.folders = folders
+        self.key = key
+        self.maxDepth = maxDepth
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        folders = try container.decode([FilePath].self, forKey: .folders)
+        key = try container.decodeIfPresent(Character.self, forKey: .key)
+        maxDepth = try container.decodeIfPresent(Int.self, forKey: .maxDepth)
+    }
+
     let id: String
     let folders: [FilePath]
     let key: Character?
+    let maxDepth: Int?
 
     var keyEquivalent: KeyEquivalent? {
         key.map { KeyEquivalent($0) }
     }
 
     func withKey(_ key: Character?) -> FolderFilter {
-        FolderFilter(id: id, folders: folders, key: key)
+        FolderFilter(id: id, folders: folders, key: key, maxDepth: maxDepth)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(folders, forKey: .folders)
+        try container.encodeIfPresent(key, forKey: .key)
+        try container.encodeIfPresent(maxDepth, forKey: .maxDepth)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, folders, key, maxDepth
     }
 }
+
+// MARK: - QuickFilter
 
 struct QuickFilter: Identifiable, Hashable, Codable, Defaults.Serializable {
     // Migration: supports old "suffix"/"query" keys and very old ".app/$" format
@@ -59,6 +97,7 @@ struct QuickFilter: Identifiable, Hashable, Codable, Defaults.Serializable {
         key = try container.decodeIfPresent(Character.self, forKey: .key)
         postQuery = try container.decodeIfPresent(String.self, forKey: .postQuery)
         folders = try container.decodeIfPresent([FilePath].self, forKey: .folders)
+        maxDepth = try container.decodeIfPresent(Int.self, forKey: .maxDepth)
 
         if container.contains(.extensions) {
             extensions = try container.decodeIfPresent(String.self, forKey: .extensions)
@@ -93,7 +132,7 @@ struct QuickFilter: Identifiable, Hashable, Codable, Defaults.Serializable {
         }
     }
 
-    init(id: String, extensions: String?, preQuery: String?, postQuery: String? = nil, dirsOnly: Bool, folders: [FilePath]? = nil, key: Character?) {
+    init(id: String, extensions: String?, preQuery: String?, postQuery: String? = nil, dirsOnly: Bool, folders: [FilePath]? = nil, key: Character?, maxDepth: Int? = nil) {
         self.id = id
         self.extensions = extensions
         self.preQuery = preQuery
@@ -101,6 +140,7 @@ struct QuickFilter: Identifiable, Hashable, Codable, Defaults.Serializable {
         self.dirsOnly = dirsOnly
         self.folders = folders
         self.key = key
+        self.maxDepth = maxDepth
     }
 
     let id: String
@@ -110,6 +150,7 @@ struct QuickFilter: Identifiable, Hashable, Codable, Defaults.Serializable {
     let dirsOnly: Bool
     let folders: [FilePath]? // auto-applied folder filter when this quick filter is enabled
     let key: Character?
+    let maxDepth: Int?
 
     var keyEquivalent: KeyEquivalent? {
         key.map { KeyEquivalent($0) }
@@ -136,11 +177,12 @@ struct QuickFilter: Identifiable, Hashable, Codable, Defaults.Serializable {
         if let folders, !folders.isEmpty {
             parts.append("in \(folders.map { FuzzyClient.friendlyName(for: $0) }.joined(separator: ", "))")
         }
+        if let maxDepth { parts.append("depth ≤ \(maxDepth)") }
         return parts.joined(separator: ", ")
     }
 
     func withKey(_ key: Character?) -> QuickFilter {
-        QuickFilter(id: id, extensions: extensions, preQuery: preQuery, postQuery: postQuery, dirsOnly: dirsOnly, folders: folders, key: key)
+        QuickFilter(id: id, extensions: extensions, preQuery: preQuery, postQuery: postQuery, dirsOnly: dirsOnly, folders: folders, key: key, maxDepth: maxDepth)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -152,10 +194,11 @@ struct QuickFilter: Identifiable, Hashable, Codable, Defaults.Serializable {
         try container.encode(dirsOnly, forKey: .dirsOnly)
         try container.encodeIfPresent(folders, forKey: .folders)
         try container.encodeIfPresent(key, forKey: .key)
+        try container.encodeIfPresent(maxDepth, forKey: .maxDepth)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, extensions, preQuery, postQuery, dirsOnly, folders, key
+        case id, extensions, preQuery, postQuery, dirsOnly, folders, key, maxDepth
         case suffix, query // legacy keys for decoding only
     }
 
@@ -261,6 +304,8 @@ let DEFAULT_QUICK_FILTERS = [
     QuickFilter(id: "Xcode Projects", extensions: ".xcodeproj .xcworkspace", preQuery: nil, dirsOnly: true, folders: [HOME], key: "x"),
 ]
 
+// MARK: - SearchScope
+
 enum SearchScope: String, CaseIterable, Defaults.Serializable {
     case home
     case library
@@ -291,6 +336,8 @@ enum SearchScope: String, CaseIterable, Defaults.Serializable {
         )
     }
 }
+
+// MARK: - WindowAppearance
 
 enum WindowAppearance: String, CaseIterable, Defaults.Serializable {
     case glassy = "Glassy"
@@ -383,6 +430,8 @@ extension Defaults.Keys {
     /__pycache__/
     """)
 }
+
+// MARK: - DefaultsCache
 
 @MainActor
 @Observable

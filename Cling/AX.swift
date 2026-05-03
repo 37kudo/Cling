@@ -4,6 +4,8 @@ import Combine
 import Lowtech
 import System
 
+// MARK: - AppManager
+
 @Observable
 class AppManager {
     init() {

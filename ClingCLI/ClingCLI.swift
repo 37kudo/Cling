@@ -38,7 +38,7 @@ func sendMachPort(data: Data?, sendTimeout: TimeInterval = 2, recvTimeout: TimeI
     return returnData?.takeRetainedValue() as Data?
 }
 
-// MARK: - CLI
+// MARK: - ClingCLI
 
 @main
 struct ClingCLI: ParsableCommand {
@@ -50,7 +50,7 @@ struct ClingCLI: ParsableCommand {
     )
 }
 
-// MARK: - Search Command
+// MARK: - Search
 
 struct Search: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Search for files")
@@ -173,7 +173,7 @@ struct Search: ParsableCommand {
     }
 }
 
-// MARK: - Reindex Command
+// MARK: - Reindex
 
 struct Reindex: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -347,7 +347,7 @@ struct Reindex: ParsableCommand {
     }
 }
 
-// MARK: - Status Command
+// MARK: - Status
 
 struct Status: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Show index status")
@@ -388,6 +388,8 @@ struct Status: ParsableCommand {
     }
 }
 
+// MARK: - Recents
+
 struct Recents: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Show default/recent results")
 
@@ -419,7 +421,7 @@ struct Recents: ParsableCommand {
     }
 }
 
-// MARK: - Index Management Command
+// MARK: - Index
 
 struct Index: ParsableCommand {
     struct Add: ParsableCommand {

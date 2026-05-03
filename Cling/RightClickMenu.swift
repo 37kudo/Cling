@@ -4,6 +4,8 @@ import Lowtech
 import SwiftUI
 import System
 
+// MARK: - RightClickMenu
+
 struct RightClickMenu: View {
     @Binding var selectedResults: Set<FilePath>
 

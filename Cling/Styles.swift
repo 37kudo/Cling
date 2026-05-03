@@ -9,7 +9,7 @@ import Foundation
 import Lowtech
 import SwiftUI
 
-// MARK: - Glass Button Style (macOS 26+)
+// MARK: - GlassTextButton
 
 struct GlassTextButton: ButtonStyle {
     @Environment(\.isEnabled) public var isEnabled
@@ -41,7 +41,7 @@ struct GlassTextButton: ButtonStyle {
 
 }
 
-// MARK: - Vibrant Button Style
+// MARK: - VibrantTextButton
 
 struct VibrantTextButton: ButtonStyle {
     @Environment(\.isEnabled) public var isEnabled
@@ -72,7 +72,7 @@ struct VibrantTextButton: ButtonStyle {
 
 }
 
-// MARK: - Opaque Button Style
+// MARK: - OpaqueTextButton
 
 struct OpaqueTextButton: ButtonStyle {
     @Environment(\.isEnabled) public var isEnabled
@@ -103,7 +103,7 @@ struct OpaqueTextButton: ButtonStyle {
 
 }
 
-// MARK: - Adaptive TextButton (picks style based on appearance)
+// MARK: - TextButton
 
 struct TextButton: ButtonStyle {
     @Environment(\.isEnabled) public var isEnabled
@@ -154,7 +154,7 @@ extension ButtonStyle where Self == BorderlessTextButton {
     }
 }
 
-// MARK: - Borderless Button Style
+// MARK: - BorderlessTextButton
 
 struct BorderlessTextButton: ButtonStyle {
     @Environment(\.isEnabled) public var isEnabled
@@ -254,6 +254,8 @@ extension NSView {
     }
 }
 
+// MARK: - DoubleClickHandler
+
 struct DoubleClickHandler: ViewModifier {
     let handler: () -> Void
 
@@ -264,6 +266,8 @@ struct DoubleClickHandler: ViewModifier {
     }
 }
 
+// MARK: - DoubleClickListeningViewRepresentable
+
 struct DoubleClickListeningViewRepresentable: NSViewRepresentable {
     let handler: () -> Void
 
@@ -272,6 +276,8 @@ struct DoubleClickListeningViewRepresentable: NSViewRepresentable {
     }
     func updateNSView(_ nsView: DoubleClickListeningView, context: Context) {}
 }
+
+// MARK: - DoubleClickListeningView
 
 class DoubleClickListeningView: NSView {
     init(handler: @escaping () -> Void) {

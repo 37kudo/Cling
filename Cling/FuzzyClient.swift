@@ -11,6 +11,8 @@ let FS_IGNORE = Bundle.main.url(forResource: "fsignore", withExtension: nil)!.ex
 let fsignore: FilePath = HOME / ".fsignore"
 let fsignoreString: String = (HOME / ".fsignore").string
 
+// MARK: - PathBlocklist
+
 /// Fast in-memory blocklist for paths that should never be indexed, regardless of scope.
 /// Rebuilt from user settings. Checked with simple prefix/contains matching on UTF-8 bytes for speed.
 final class PathBlocklist: @unchecked Sendable {
@@ -85,6 +87,8 @@ var scopeIndexesExist: Bool {
     SearchScope.allCases.contains { scopeIndexFile($0).exists }
 }
 
+// MARK: - SortField
+
 enum SortField: String, CaseIterable, Identifiable {
     case score
     case name
@@ -103,6 +107,8 @@ private func computeEnabledVolumes(mounted: [FilePath], disabled: [FilePath]) ->
     let disconnected = Defaults[.indexedVolumePaths].filter { !mountedSet.contains($0) && !disabledSet.contains($0) }
     return mountedEnabled + disconnected
 }
+
+// MARK: - FuzzyClient
 
 @Observable @MainActor
 class FuzzyClient {
@@ -326,7 +332,8 @@ class FuzzyClient {
                     quickFilter = QuickFilter(
                         id: currentQuick.id, extensions: currentQuick.extensions,
                         preQuery: currentQuick.preQuery, postQuery: currentQuick.postQuery,
-                        dirsOnly: currentQuick.dirsOnly, folders: folderFilter.folders, key: currentQuick.key
+                        dirsOnly: currentQuick.dirsOnly, folders: folderFilter.folders, key: currentQuick.key,
+                        maxDepth: currentQuick.maxDepth
                     )
                     recomputeQuickFilterPool()
                 }
@@ -1151,6 +1158,16 @@ class FuzzyClient {
         let folderPrefixes = folderFilter?.folders.map(\.string)
         let volumePrefix = volumeFilter?.string
         let removedPaths = removedFiles.union(excludedPaths)
+        let activeMaxDepth: Int? = {
+            let q = quickFilter?.maxDepth
+            let f = folderFilter?.maxDepth
+            switch (q, f) {
+            case let (.some(a), .some(b)): return min(a, b)
+            case let (.some(a), nil): return a
+            case let (nil, .some(b)): return b
+            default: return nil
+            }
+        }()
         let wantVolumeFilter = volumeFilter != nil
 
         // Combine folder prefixes with volume prefix
@@ -1215,6 +1232,7 @@ class FuzzyClient {
                 var firstResults = firstEng.engine.search(
                     query: query, maxResults: maxResults, folderPrefixes: allPrefixes,
                     excludedPaths: removedPaths.isEmpty ? nil : removedPaths,
+                    maxDepth: activeMaxDepth,
                     candidatePool: firstPool, cancelled: { cancelFlag }
                 )
                 for i in firstResults.indices {
@@ -1250,6 +1268,7 @@ class FuzzyClient {
                                 var results = eng.engine.search(
                                     query: query, maxResults: maxResults, folderPrefixes: allPrefixes,
                                     excludedPaths: removedPaths.isEmpty ? nil : removedPaths,
+                                    maxDepth: activeMaxDepth,
                                     candidatePool: pool, cancelled: { cancelFlag }
                                 )
                                 for i in results.indices {

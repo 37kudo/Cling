@@ -6,6 +6,8 @@ import System
 let CLING_CLI_BIN = Bundle.main.sharedSupportPath.map { ($0 + "/ClingCLI").filePath! }
 let CLING_CLI_LINK = (HOME / ".local/bin/cling")
 
+// MARK: - ShellIntegration
+
 class ShellIntegration {
     static let pathExport = "export PATH=\"$PATH:$HOME/.local/bin\""
 

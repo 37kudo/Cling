@@ -32,6 +32,8 @@ func cleanup() {
 let HOUR_FACTOR: TimeInterval = 60 * 60
 let MINUTE_FACTOR: TimeInterval = 60
 
+// MARK: - AppearanceManager
+
 @MainActor @Observable
 final class AppearanceManager {
     init() {
@@ -69,6 +71,8 @@ var PRODUCTS: [Any] {
         []
     }
 }
+
+// MARK: - AppDelegate
 
 @MainActor
 class AppDelegate: LowtechProAppDelegate {
@@ -242,6 +246,7 @@ class AppDelegate: LowtechProAppDelegate {
             window.animationBehavior = .none
             window.alphaValue = 0
             window.ignoresMouseEvents = true
+            window.orderOut(nil)
             WM.mainWindowActive = false
         } else {
             window.close()
@@ -414,6 +419,8 @@ class AppDelegate: LowtechProAppDelegate {
 
 }
 
+// MARK: - MainWindowDelegateProxy
+
 final class MainWindowDelegateProxy: NSObject, NSWindowDelegate {
     weak var original: NSWindowDelegate?
 
@@ -439,6 +446,8 @@ final class MainWindowDelegateProxy: NSObject, NSWindowDelegate {
     }
 
 }
+
+// MARK: - WindowManager
 
 @MainActor @Observable
 class WindowManager {
@@ -483,6 +492,8 @@ func batteryLevel() -> Double {
     return 1
 }
 
+// MARK: - WindowBackground
+
 struct WindowBackground: View {
     var tintColor: Color {
         colorScheme == .light ? .white : .black
@@ -514,6 +525,8 @@ struct WindowBackground: View {
     @Default(.windowAppearance) private var appearance
 
 }
+
+// MARK: - ClingApp
 
 @main
 struct ClingApp: App {
