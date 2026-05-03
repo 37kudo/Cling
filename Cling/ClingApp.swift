@@ -275,6 +275,7 @@ class AppDelegate: LowtechProAppDelegate {
     }
 
     func focusWindow() {
+        DropZoneOverlay.shared.dismissIfPresenting()
         guard let window = mainWindow else { return }
         window.collectionBehavior.insert(.moveToActiveSpace)
         if Defaults[.instantMode] {
@@ -309,6 +310,7 @@ class AppDelegate: LowtechProAppDelegate {
 
 //        log.debug("Reopened")
 
+        DropZoneOverlay.shared.dismissIfPresenting()
         if let mainWindow {
             mainWindow.orderFrontRegardless()
             mainWindow.becomeMain()

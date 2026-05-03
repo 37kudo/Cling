@@ -63,7 +63,6 @@ struct ContentView: View {
         .foregroundStyle(.secondary)
         .opacity(pinHovering ? 1 : 0.4)
         .onHover { pinHovering = $0 }
-        .keyboardShortcut(".")
         .focusable(false)
         .help(wm.pinned ? "Unpin window (⌘.)" : "Pin window to keep it on top of other windows (⌘.)")
     }
@@ -124,12 +123,14 @@ struct ContentView: View {
                         }
                         return event
                     }
+                    installContentShortcutMonitor()
                 }
                 .onDisappear {
                     if let cmdDownMonitor {
                         NSEvent.removeMonitor(cmdDownMonitor)
                     }
                     cmdDownMonitor = nil
+                    removeContentShortcutMonitor()
                 }
                 .onChange(of: focused) {
                     if !fuzzy.hasFullDiskAccess {
@@ -205,34 +206,6 @@ struct ContentView: View {
             Button("OK") { pathNotFoundMessage = nil }
         } message: {
             Text(pathNotFoundMessage ?? "")
-        }
-        .onKeyPress(keys: Set(scriptManager.scriptShortcuts.values.map { KeyEquivalent($0) }), phases: [.down]) { keyPress in
-            guard proactive, scriptManager.process == nil, keyPress.modifiers == [.command, .control] else { return .ignored }
-
-            guard let script = scriptManager.scriptShortcuts.first(where: { $0.value == keyPress.key.character })?.key else {
-                return .ignored
-            }
-            guard scriptManager.isEligible(script, forPaths: selectedResults.arr) else {
-                return .ignored
-            }
-            RH.trackRun(selectedResults)
-            scriptManager.run(script: script, args: selectedResults.map(\.string))
-
-            return .handled
-        }
-        .onKeyPress(keys: Set(fuzzy.openWithAppShortcuts.values.map { KeyEquivalent($0) }), phases: [.down]) { keyPress in
-            guard keyPress.modifiers == [.command, .option] else { return .ignored }
-
-            guard let app = fuzzy.openWithAppShortcuts.first(where: { $0.value == keyPress.key.character })?.key else {
-                return .ignored
-            }
-
-            RH.trackRun(selectedResults)
-            NSWorkspace.shared.open(
-                selectedResults.map(\.url), withApplicationAt: app, configuration: .init(),
-                completionHandler: { _, _ in }
-            )
-            return .handled
         }
         .if(!fuzzy.hasFullDiskAccess) { view in
             view.overlay(fullDiskAccessOverlay)
@@ -638,7 +611,6 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
             .focusable(false)
-            .keyboardShortcut("s")
             .help("Save current query as a Quick Filter (⌘S)")
         }
     }
@@ -709,6 +681,87 @@ struct ContentView: View {
     }
 
     @State private var cmdDownMonitor: Any?
+    @State private var contentShortcutMonitor: Any?
+
+    private func installContentShortcutMonitor() {
+        guard contentShortcutMonitor == nil else { return }
+        contentShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if NSApp.keyWindow?.attachedSheet != nil { return event }
+            if DropZoneOverlay.shared.isPresenting { return event }
+            if event.window !== AppDelegate.shared.mainWindow { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let kc = event.keyCode
+            let chars = (event.charactersIgnoringModifiers ?? "").lowercased()
+
+            // ⌘. → toggle pin
+            if mods == .command, chars == "." {
+                wm.pinned.toggle()
+                NSApp.windows.first { $0.title == "Cling" }?.level = wm.pinned ? .floating : .normal
+                return nil
+            }
+            // ⌘S → save current query as Quick Filter (when applicable)
+            if mods == .command, chars == "s",
+               !fuzzy.query.isEmpty, showingResults, proactive
+            {
+                prefillQuickFilter()
+                return nil
+            }
+            // ⌃0 → sort by score
+            if mods == .control, chars == "0" {
+                fuzzy.sortField = .score
+                fuzzy.reverseSort = true
+                return nil
+            }
+            // Esc → quicklook close / dismiss / clear query (xButton behavior)
+            if kc == 53, mods.isEmpty, !showHistorySuggestions, !DropZoneOverlay.shared.isPresenting {
+                if QuickLooker.visible {
+                    QuickLooker.close()
+                    return nil
+                }
+                if fuzzy.query.isEmpty {
+                    if let win = NSApp.windows.first(where: { $0.title == "Cling" }) {
+                        AppDelegate.shared.hideOrCloseMainWindow(win)
+                    }
+                    appManager.lastFrontmostApp?.activate()
+                    return nil
+                }
+                fuzzy.query = ""
+                focused = .search
+                return nil
+            }
+            // ⌘⌃<letter> → script
+            if mods == [.command, .control], proactive, scriptManager.process == nil,
+               let ch = chars.first,
+               let script = scriptManager.scriptShortcuts.first(where: { $0.value == ch })?.key,
+               scriptManager.isEligible(script, forPaths: selectedResults.arr)
+            {
+                RH.trackRun(selectedResults)
+                scriptManager.run(script: script, args: selectedResults.map(\.string))
+                return nil
+            }
+            // ⌘⌥<letter> → open with app
+            if mods == [.command, .option],
+               let ch = chars.first,
+               let app = fuzzy.openWithAppShortcuts.first(where: { $0.value == ch })?.key
+            {
+                RH.trackRun(selectedResults)
+                NSWorkspace.shared.open(
+                    selectedResults.map(\.url), withApplicationAt: app, configuration: .init(),
+                    completionHandler: { _, _ in }
+                )
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeContentShortcutMonitor() {
+        if let m = contentShortcutMonitor {
+            NSEvent.removeMonitor(m)
+            contentShortcutMonitor = nil
+        }
+    }
+
     @State private var showFullHistory = false
     @State private var showNeedsProPopover = false
     @State private var isAddingFolderFilter = false
@@ -811,7 +864,6 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .foregroundColor(.secondary)
-        .keyboardShortcut(.cancelAction)
         .focusable(false)
 
     }
@@ -874,7 +926,6 @@ struct ContentView: View {
                     .opacity(fuzzy.sortField == .score ? 1 : 0.5)
             }
             .buttonStyle(BorderlessButtonStyle())
-            .keyboardShortcut("0", modifiers: [.control])
             .help("Sort by score (Control-0)")
             .padding(.trailing, 12)
             .padding(.top, 9)

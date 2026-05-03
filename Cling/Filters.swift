@@ -12,6 +12,8 @@ struct FilterPicker: View {
 
     var body: some View {
         menu
+            .onAppear { installFilterShortcutMonitor() }
+            .onDisappear { removeFilterShortcutMonitor() }
             .sheet(isPresented: $isAddingQuickFilter, onDismiss: {
                 saveQuickFilter(
                     id: filterID,
@@ -80,7 +82,6 @@ struct FilterPicker: View {
                         fuzzy.volumeFilter = nil
                     }
                     .help("Searches all indexed files without any filters")
-                    .keyboardShortcut(.escape, modifiers: [.option])
                 } label: {
                     filterLabel
                 }
@@ -117,6 +118,8 @@ struct FilterPicker: View {
     @State private var showFilterEditor = false
 
     @State private var showNeedsProPopover = false
+
+    @State private var filterShortcutMonitor: Any?
 
     private var folderFilters: [FolderFilter] { defaults.folderFilters }
     private var quickFilters: [QuickFilter] { defaults.quickFilters }
@@ -199,9 +202,6 @@ struct FilterPicker: View {
         )
         .tag(filter as FilePath?)
         .help(status == .notIndexed ? "Click to start indexing \(filter.shellString)" : status == .disconnected ? "Volume not connected, searches cached index" : "Searches inside: \(filter.shellString)")
-        .ifLet(key) { view, key in
-            view.keyboardShortcut(KeyEquivalent(key), modifiers: [.option])
-        }
         .truncationMode(.tail)
         .disabled(status == .indexing)
     }
@@ -215,9 +215,6 @@ struct FilterPicker: View {
         )
         .tag(filter as QuickFilter?)
         .help(filter.subtitle)
-        .ifLet(applyShortcut ? filter.key : nil) { view, key in
-            view.keyboardShortcut(KeyEquivalent(key), modifiers: [.option])
-        }
         .truncationMode(.tail)
     }
 
@@ -231,9 +228,6 @@ struct FilterPicker: View {
         )
         .tag(filter as FolderFilter?)
         .help("Searches in \(filter.folders.map(\.shellString).joined(separator: ", "))")
-        .ifLet(applyShortcut ? filter.key : nil) { view, key in
-            view.keyboardShortcut(KeyEquivalent(key), modifiers: [.option])
-        }
         .truncationMode(.tail)
         .disabled(status == .indexing)
     }
@@ -273,6 +267,59 @@ struct FilterPicker: View {
             if fuzzy.folderFilter == filter {
                 fuzzy.folderFilter = nil
             }
+        }
+    }
+
+    private func installFilterShortcutMonitor() {
+        guard filterShortcutMonitor == nil else { return }
+        filterShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if NSApp.keyWindow?.attachedSheet != nil { return event }
+            if DropZoneOverlay.shared.isPresenting { return event }
+            if event.window !== AppDelegate.shared.mainWindow { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard mods == .option else { return event }
+
+            // ⌥⎋ → clear all filters
+            if event.keyCode == 53 {
+                FUZZY.folderFilter = nil
+                FUZZY.quickFilter = nil
+                FUZZY.volumeFilter = nil
+                return nil
+            }
+
+            guard let ch = (event.charactersIgnoringModifiers ?? "").lowercased().first else {
+                return event
+            }
+
+            // Quick filters
+            if let qf = Defaults[.quickFilters].first(where: { $0.key == ch }) {
+                FUZZY.quickFilter = qf
+                return nil
+            }
+            // Folder filters
+            if let ff = Defaults[.folderFilters].first(where: { $0.key == ch }) {
+                FUZZY.folderFilter = ff
+                return nil
+            }
+            // Volumes (digit keys; index 0 = root, 1...n = enabled volumes)
+            if let digit = ch.wholeNumberValue {
+                let enabled = FUZZY.enabledVolumes
+                if !enabled.isEmpty {
+                    let volumes = [FilePath.root] + enabled
+                    if digit < volumes.count {
+                        FUZZY.volumeFilter = volumes[digit]
+                        return nil
+                    }
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeFilterShortcutMonitor() {
+        if let m = filterShortcutMonitor {
+            NSEvent.removeMonitor(m)
+            filterShortcutMonitor = nil
         }
     }
 
@@ -448,14 +495,23 @@ struct FilterEditorSheet: View {
             }
         }
         .frame(width: 820, height: 580)
-        .onChange(of: quickFilters) { _, new in
+        .onChange(of: quickFilters) { old, new in
             if case let .quickFilter(id) = selection, !new.contains(where: { $0.id == id }) {
-                selection = .quickFilters
+                // Same length + same position → it's a rename. Follow the renamed filter.
+                if old.count == new.count, let oldIdx = old.firstIndex(where: { $0.id == id }), oldIdx < new.count {
+                    selection = .quickFilter(new[oldIdx].id)
+                } else {
+                    selection = .quickFilters
+                }
             }
         }
-        .onChange(of: folderFilters) { _, new in
+        .onChange(of: folderFilters) { old, new in
             if case let .folderFilter(id) = selection, !new.contains(where: { $0.id == id }) {
-                selection = .folderFilters
+                if old.count == new.count, let oldIdx = old.firstIndex(where: { $0.id == id }), oldIdx < new.count {
+                    selection = .folderFilter(new[oldIdx].id)
+                } else {
+                    selection = .folderFilters
+                }
             }
         }
     }
@@ -665,7 +721,11 @@ struct QuickFilterRow: View {
         Section {
             TextField("Name", text: $name, prompt: Text("Filter name"))
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: name) { save() }
+                .focused($nameFocused)
+                .onSubmit { save() }
+                .onChange(of: nameFocused) { _, focused in
+                    if !focused { save() }
+                }
             TextField("Extensions", text: $extensions, prompt: Text("e.g.: .png .jpg .pdf"))
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: extensions) { save() }
@@ -727,11 +787,12 @@ struct QuickFilterRow: View {
     @State private var hotkey: SauceKey
     @State private var recording = false
     @State private var maxDepth: Int
+    @FocusState private var nameFocused: Bool
 
     @Default(.quickFilters) private var quickFilters
 
     private func save() {
-        guard let idx = quickFilters.firstIndex(of: filter) else { return }
+        guard let idx = quickFilters.firstIndex(where: { $0.id == filter.id }) else { return }
         let updated = QuickFilter(
             id: name,
             extensions: extensions.trimmed.isEmpty ? nil : extensions.trimmed,
@@ -786,7 +847,11 @@ struct FolderFilterRow: View {
         Section {
             TextField("Name", text: $name, prompt: Text("Filter name"))
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: name) { save() }
+                .focused($nameFocused)
+                .onSubmit { save() }
+                .onChange(of: nameFocused) { _, focused in
+                    if !focused { save() }
+                }
             LabeledContent("Folders") {
                 folderEditor(folders: $folders, emptyText: "No folders", onChange: save, onAdd: addFolder)
             }
@@ -834,11 +899,12 @@ struct FolderFilterRow: View {
     @State private var hotkey: SauceKey
     @State private var recording = false
     @State private var maxDepth: Int
+    @FocusState private var nameFocused: Bool
 
     @Default(.folderFilters) private var folderFilters
 
     private func save() {
-        guard let idx = folderFilters.firstIndex(of: filter) else { return }
+        guard let idx = folderFilters.firstIndex(where: { $0.id == filter.id }) else { return }
         let updated = FolderFilter(id: name, folders: folders, key: hotkey == .escape ? nil : hotkey.lowercasedChar.first, maxDepth: maxDepth < 0 ? nil : maxDepth)
         folderFilters[idx] = updated
         if FUZZY.folderFilter == filter { FUZZY.folderFilter = updated }

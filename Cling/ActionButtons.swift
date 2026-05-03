@@ -35,6 +35,11 @@ struct ActionButtons: View {
                 Spacer()
                 openWithPickerButton
                 Spacer()
+            } else {
+                dropToFocusedElementButton
+                dropToZoneButton
+                openWithFrontmostAppButton
+                Spacer()
             }
             copyFilesButton.disabled(focused.wrappedValue != .list)
             copyPathsButton
@@ -59,6 +64,263 @@ struct ActionButtons: View {
                 fuzzy.results = fuzzy.results.filter { !movedPaths.contains($0) }
             }
         }
+        .onAppear { installShortcutMonitor() }
+        .onDisappear { removeShortcutMonitor() }
+    }
+
+    @State private var shortcutMonitor: Any?
+
+    private func installShortcutMonitor() {
+        guard shortcutMonitor == nil else { return }
+        let selB = $selectedResults
+        let copyToB = $isPresentingCopyToSheet
+        let moveToB = $isPresentingMoveToSheet
+        let renameB = $isPresentingRenameView
+        let confirmB = $isPresentingConfirm
+        let openWithB = $isPresentingOpenWithPicker
+        let copiedFilesB = $copiedFiles
+        let copiedPathsB = $copiedPaths
+        let focusBinding = focused
+
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Only act on key events delivered to the main Cling window — never to Settings,
+            // Onboarding, the borderless DropZoneOverlay panel, or any sheet on top of those.
+            if NSApp.keyWindow?.attachedSheet != nil { return event }
+            if DropZoneOverlay.shared.isPresenting { return event }
+            if event.window !== AppDelegate.shared.mainWindow { return event }
+
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = (event.charactersIgnoringModifiers ?? "").lowercased()
+            let kc = event.keyCode
+            let sel = selB.wrappedValue
+            let focus = focusBinding.wrappedValue
+            let inTerminal = APP_MANAGER.frontmostAppIsTerminal
+
+            let isReturn = kc == 36 || kc == 76
+            let isDelete = kc == 51 || kc == 117
+
+            if sel.isEmpty { return event }
+
+            // ⌘⏎ Show in Finder
+            if isReturn, mods == .command {
+                RH.trackRun(sel)
+                NSWorkspace.shared.activateFileViewerSelecting(sel.map(\.url))
+                return nil
+            }
+            // ⏎ Open (default app, non-terminal context)
+            if isReturn, mods.isEmpty, !inTerminal {
+                RH.trackRun(sel)
+                for url in sel.map(\.url) {
+                    NSWorkspace.shared.open(url)
+                }
+                return nil
+            }
+            // ⌘⇧⏎ Open (default app, terminal context)
+            if isReturn, mods == [.command, .shift], inTerminal {
+                RH.trackRun(sel)
+                for url in sel.map(\.url) {
+                    NSWorkspace.shared.open(url)
+                }
+                return nil
+            }
+            // ⏎ Paste to terminal
+            if isReturn, mods.isEmpty, inTerminal {
+                RH.trackRun(sel)
+                APP_MANAGER.pasteToFrontmostApp(paths: sel.arr, separator: " ", quoted: true)
+                return nil
+            }
+            // ⌘⇧⏎ Paste to non-terminal
+            if isReturn, mods == [.command, .shift], !inTerminal {
+                RH.trackRun(sel)
+                APP_MANAGER.pasteToFrontmostApp(paths: sel.arr, separator: "\n", quoted: false)
+                return nil
+            }
+            // ⌥⏎ Drop into focused element of last frontmost app
+            if isReturn, mods == .option {
+                RH.trackRun(sel)
+                APP_MANAGER.dropToFocusedElement(paths: sel.arr)
+                return nil
+            }
+            // ⌥⇧⏎ Drop to zone (escape hatch)
+            if isReturn, mods == [.option, .shift] {
+                RH.trackRun(sel)
+                APP_MANAGER.dropToZone(paths: sel.arr)
+                return nil
+            }
+            // ⌘⌥⏎ Open with last frontmost app
+            if isReturn, mods == [.command, .option],
+               let app = APP_MANAGER.lastFrontmostApp, let appURL = app.bundleURL
+            {
+                RH.trackRun(sel)
+                NSWorkspace.shared.open(
+                    sel.map(\.url), withApplicationAt: appURL, configuration: .init(),
+                    completionHandler: { _, _ in }
+                )
+                return nil
+            }
+            // ⌘T Open in terminal
+            if chars == "t", mods == .command,
+               let terminal = Defaults[.terminalApp].existingFilePath?.url
+            {
+                RH.trackRun(sel)
+                let dirs = sel.map { $0.isDir ? $0.url : $0.dir.url }.uniqued
+                NSWorkspace.shared.open(
+                    dirs, withApplicationAt: terminal, configuration: .init(),
+                    completionHandler: { _, _ in }
+                )
+                return nil
+            }
+            // ⌘E Edit
+            if chars == "e", mods == .command,
+               let editor = Defaults[.editorApp].existingFilePath?.url
+            {
+                RH.trackRun(sel)
+                NSWorkspace.shared.open(
+                    sel.map(\.url), withApplicationAt: editor, configuration: .init(),
+                    completionHandler: { _, _ in }
+                )
+                return nil
+            }
+            // ⌘S Shelve
+            if chars == "s", mods == .command,
+               let shelf = Defaults[.shelfApp].existingFilePath?.url
+            {
+                RH.trackRun(sel)
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = false
+                NSWorkspace.shared.open(
+                    sel.map(\.url), withApplicationAt: shelf, configuration: config,
+                    completionHandler: { _, _ in }
+                )
+                return nil
+            }
+            // ⌘O Open With picker
+            if chars == "o", mods == .command, !FUZZY.openWithAppShortcuts.isEmpty {
+                focusBinding.wrappedValue = .openWith
+                openWithB.wrappedValue = true
+                return nil
+            }
+            // ⌘M Move to...
+            if chars == "m", mods == .command {
+                moveToB.wrappedValue = true
+                return nil
+            }
+            // ⌘R Rename
+            if chars == "r", mods == .command {
+                renameB.wrappedValue = true
+                return nil
+            }
+            // ⌘Y Quicklook
+            if chars == "y", mods == .command {
+                let resultsList = (FUZZY.noQuery && FUZZY.volumeFilter == nil)
+                    ? (FUZZY.sortField == .score ? FUZZY.recents : FUZZY.sortedRecents)
+                    : FUZZY.results
+                QuickLooker.quicklook(
+                    urls: sel.count > 1 ? sel.map(\.url) : resultsList.map(\.url),
+                    selectedItemIndex: sel.count == 1 ? (resultsList.firstIndex(of: sel.first!) ?? 0) : 0
+                )
+                return nil
+            }
+            // ⌘C Copy / ⌘⌥C Copy to...
+            if chars == "c", mods == .command, focus == .list {
+                RH.trackRun(sel)
+                withAnimation(.fastSpring) { copiedFilesB.wrappedValue = true }
+                mainAsyncAfter(ms: 150) {
+                    withAnimation(.easeOut(duration: 0.1)) { copiedFilesB.wrappedValue = false }
+                }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects(sel.map(\.url) as [NSPasteboardWriting])
+                return nil
+            }
+            if chars == "c", mods == [.command, .option], focus == .list {
+                copyToB.wrappedValue = true
+                return nil
+            }
+            // ⌘⇧C Copy paths / ⌘⌥⇧C Copy filenames
+            if chars == "c", mods == [.command, .shift] {
+                withAnimation(.fastSpring) { copiedPathsB.wrappedValue = true }
+                mainAsyncAfter(ms: 150) {
+                    withAnimation(.easeOut(duration: 0.1)) { copiedPathsB.wrappedValue = false }
+                }
+                let useTilde = Defaults[.copyPathsWithTilde]
+                let pathStr: (FilePath) -> String = useTilde ? { $0.shellString } : { $0.string }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(
+                    APP_MANAGER.frontmostAppIsTerminal
+                        ? sel.map { pathStr($0).replacingOccurrences(of: " ", with: "\\ ") }.joined(separator: " ")
+                        : sel.map { pathStr($0) }.joined(separator: "\n"), forType: .string
+                )
+                return nil
+            }
+            if chars == "c", mods == [.command, .shift, .option] {
+                withAnimation(.fastSpring) { copiedPathsB.wrappedValue = true }
+                mainAsyncAfter(ms: 150) {
+                    withAnimation(.easeOut(duration: 0.1)) { copiedPathsB.wrappedValue = false }
+                }
+                let filenames = sel.map(\.name.string)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(
+                    APP_MANAGER.frontmostAppIsTerminal
+                        ? filenames.map { $0.replacingOccurrences(of: " ", with: "\\ ") }.joined(separator: " ")
+                        : filenames.joined(separator: "\n"), forType: .string
+                )
+                return nil
+            }
+            // ⌘⌫ Trash / ⌘⌥⌫ Delete
+            if isDelete, focus == .list, !sel.contains(where: \.isOnReadOnlyVolume) {
+                if mods == .command {
+                    if Defaults[.suppressTrashConfirm] {
+                        Self.performTrash(selection: selB)
+                    } else {
+                        confirmB.wrappedValue = true
+                    }
+                    return nil
+                }
+                if mods == [.command, .option] {
+                    Self.performDelete(selection: selB)
+                    return nil
+                }
+            }
+
+            return event
+        }
+    }
+
+    private func removeShortcutMonitor() {
+        if let m = shortcutMonitor {
+            NSEvent.removeMonitor(m)
+            shortcutMonitor = nil
+        }
+    }
+
+    private static func performTrash(selection: Binding<Set<FilePath>>) {
+        var removed = Set<FilePath>()
+        for path in selection.wrappedValue {
+            log.info("Trashing \(path.shellString)")
+            do {
+                try FileManager.default.trashItem(at: path.url, resultingItemURL: nil)
+                removed.insert(path)
+            } catch {
+                log.error("Error trashing \(path.shellString): \(error)")
+            }
+        }
+        selection.wrappedValue.subtract(removed)
+        FUZZY.results = FUZZY.results.filter { !removed.contains($0) && $0.exists }
+    }
+
+    private static func performDelete(selection: Binding<Set<FilePath>>) {
+        var removed = Set<FilePath>()
+        for path in selection.wrappedValue {
+            log.info("Permanently deleting \(path.shellString)")
+            do {
+                try FileManager.default.removeItem(at: path.url)
+                removed.insert(path)
+            } catch {
+                log.error("Error deleting \(path.shellString): \(error)")
+            }
+        }
+        selection.wrappedValue.subtract(removed)
+        FUZZY.results = FUZZY.results.filter { !removed.contains($0) && $0.exists }
     }
 
     private func pasteToFrontmostApp(inTerminal: Bool) {
@@ -77,7 +339,6 @@ struct ActionButtons: View {
             RH.trackRun(selectedResults)
             NSWorkspace.shared.activateFileViewerSelecting(selectedResults.map(\.url))
         }
-        .keyboardShortcut(.return, modifiers: [.command])
         .help("Show the selected files in Finder")
     }
 
@@ -92,7 +353,6 @@ struct ActionButtons: View {
                     completionHandler: { _, _ in }
                 )
             }
-            .keyboardShortcut("t", modifiers: [.command])
             .help("Open the selected files in Terminal")
         }
     }
@@ -106,7 +366,6 @@ struct ActionButtons: View {
                     completionHandler: { _, _ in }
                 )
             }
-            .keyboardShortcut("e", modifiers: [.command])
             .help("Open the selected files in the configured editor (\(editorApp.filePath?.stem ?? "TextEdit"))")
         }
     }
@@ -122,7 +381,6 @@ struct ActionButtons: View {
                     completionHandler: { _, _ in }
                 )
             }
-            .keyboardShortcut("s", modifiers: [.command])
             .help("Shelve the selected files in \(shelfApp.filePath?.stem ?? "shelf app")")
         }
     }
@@ -133,13 +391,11 @@ struct ActionButtons: View {
             Button("⌘⌥C Copy to...") {
                 isPresentingCopyToSheet = true
             }
-            .keyboardShortcut("c", modifiers: [.command, .option])
             .help("Copy the selected files to a folder")
         } else {
             Button(action: copyFiles) {
                 Text("⌘C Copy")
             }
-            .keyboardShortcut("c", modifiers: [.command])
             .help("Copy the selected files")
             .background(Color.inverted.opacity(copiedFiles ? 1.0 : 0.0))
             .shadow(color: Color.black.opacity(copiedFiles ? 0.1 : 0.0), radius: 3)
@@ -153,7 +409,6 @@ struct ActionButtons: View {
             Button(action: copyFilenames) {
                 Text("⌘⌥⇧C Copy filenames")
             }
-            .keyboardShortcut("c", modifiers: [.command, .shift, .option])
             .help("Copy the filenames of the selected files")
             .background(Color.inverted.opacity(copiedPaths ? 1.0 : 0.0))
             .shadow(color: Color.black.opacity(copiedPaths ? 0.1 : 0.0), radius: 3)
@@ -162,7 +417,6 @@ struct ActionButtons: View {
             Button(action: copyPaths) {
                 Text("⌘⇧C Copy paths")
             }
-            .keyboardShortcut("c", modifiers: [.command, .shift])
             .help("Copy the paths of the selected files")
             .background(Color.inverted.opacity(copiedPaths ? 1.0 : 0.0))
             .shadow(color: Color.black.opacity(copiedPaths ? 0.1 : 0.0), radius: 3)
@@ -179,7 +433,6 @@ struct ActionButtons: View {
             isPresentingOpenWithPicker = true
         }
         .buttonStyle(.plain)
-        .keyboardShortcut("o", modifiers: [.command])
         .opacity(0)
         .frame(width: 0)
         .sheet(isPresented: $isPresentingOpenWithPicker) {
@@ -196,7 +449,6 @@ struct ActionButtons: View {
             Button("⌘⌥⌫ Delete", role: .destructive) {
                 permanentlyDelete()
             }
-            .keyboardShortcut(.delete, modifiers: [.command, .option])
             .help("Permanently delete the selected files")
             .disabled(selectedResults.contains(where: \.isOnReadOnlyVolume))
         } else {
@@ -207,7 +459,6 @@ struct ActionButtons: View {
                     isPresentingConfirm = true
                 }
             }
-            .keyboardShortcut(.delete, modifiers: [.command])
             .help("Move the selected files to the trash")
             .disabled(selectedResults.contains(where: \.isOnReadOnlyVolume))
             .confirmationDialog(
@@ -249,7 +500,6 @@ struct ActionButtons: View {
         Button(action: quicklook) {
             Text("\(focused.wrappedValue == .search ? "⌘Y" : "⎵") Quicklook")
         }
-        .keyboardShortcut("y", modifiers: [.command])
         .help("Preview the selected files")
     }
 
@@ -263,7 +513,6 @@ struct ActionButtons: View {
         .onChange(of: renamedPaths) {
             renameFiles()
         }
-        .keyboardShortcut("r", modifiers: [.command])
         .help("Rename the selected files")
     }
 
@@ -271,8 +520,46 @@ struct ActionButtons: View {
         Button(action: openSelectedResults) {
             Text(inTerminal ? "⌘⇧⏎" : "⏎") + Text(" Open")
         }
-        .keyboardShortcut(.return, modifiers: inTerminal ? [.command, .shift] : [])
         .help("Open the selected files with their default app")
+    }
+
+    @ViewBuilder
+    private var dropToFocusedElementButton: some View {
+        if let app = appManager.lastFrontmostApp,
+           let target = appManager.axDropTarget(for: app)
+        {
+            Button("⌥⏎ Drop into \(target.name)") {
+                RH.trackRun(selectedResults)
+                appManager.dropToFocusedElement(paths: selectedResults.arr)
+            }
+            .help("Drop into \(target.name) using a real drag-drop event")
+            .disabled(selectedResults.isEmpty)
+        }
+    }
+
+    @ViewBuilder
+    private var dropToZoneButton: some View {
+        Button("⌥⇧⏎ Drag and drop to zone") {
+            RH.trackRun(selectedResults)
+            appManager.dropToZone(paths: selectedResults.arr)
+        }
+        .help("Pick a screen zone with the keyboard, then drop the files there")
+        .disabled(selectedResults.isEmpty)
+    }
+
+    @ViewBuilder
+    private var openWithFrontmostAppButton: some View {
+        if let app = appManager.lastFrontmostApp, let appURL = app.bundleURL {
+            Button("⌘⌥⏎ Open with \(app.name ?? "frontmost app")") {
+                RH.trackRun(selectedResults)
+                NSWorkspace.shared.open(
+                    selectedResults.map(\.url), withApplicationAt: appURL, configuration: .init(),
+                    completionHandler: { _, _ in }
+                )
+            }
+            .help("Open the selected files with \(app.name ?? "the frontmost app")")
+            .disabled(selectedResults.isEmpty)
+        }
     }
 
     private func pasteToFrontmostAppButton(inTerminal: Bool) -> some View {
@@ -280,7 +567,6 @@ struct ActionButtons: View {
             Text(inTerminal ? "⏎" : "⌘⇧⏎")
                 + Text(" Paste to \(appManager.lastFrontmostApp?.name ?? "frontmost app")")
         }
-        .keyboardShortcut(.return, modifiers: inTerminal ? [] : [.command, .shift])
         .help("Paste the paths of the selected files to the frontmost app")
     }
 
@@ -374,7 +660,6 @@ struct ActionButtons: View {
         Button("⌘M Move to...") {
             isPresentingMoveToSheet = true
         }
-        .keyboardShortcut("m", modifiers: [.command])
         .help("Move the selected files to a folder")
     }
 

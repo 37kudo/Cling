@@ -1763,6 +1763,7 @@ func commonApplications(for urls: [URL]) -> [URL] {
     if let terminal = Defaults[.terminalApp].fileURL, let editor = Defaults[.editorApp].fileURL {
         commonApps = commonApps.filter { $0 != terminal && $0 != editor }
     }
+    commonApps = commonApps.filter { $0.lastPathComponent != "Google Chrome for Testing.app" }
     let commonAppsDict: [String: [URL]] = commonApps.group(by: \.bundleIdentifier)
     let uniqueAppsByShortestPath = commonAppsDict.values.compactMap { $0.min(by: \.path.count) }
     return uniqueAppsByShortestPath
