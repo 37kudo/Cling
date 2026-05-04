@@ -353,15 +353,20 @@ struct ContentView: View {
             }
     }
 
+    @Default(.showOpenWithRow) private var showOpenWithRow
+    @Default(.showScriptRow) private var showScriptRow
+
     private var actionButtonRows: some View {
         let rows = VStack {
             ActionButtons(selectedResults: $selectedResults, selectedResultIDs: $selectedResultIDs, focused: $focused)
                 .hfill(.leading)
                 .padding(.bottom, 4)
 
-            OpenWithActionButtons(selectedResults: selectedResults)
-                .hfill(.leading)
-            if proactive {
+            if showOpenWithRow {
+                OpenWithActionButtons(selectedResults: selectedResults)
+                    .hfill(.leading)
+            }
+            if proactive, showScriptRow {
                 ScriptActionButtons(selectedResults: selectedResults, focused: $focused)
                     .hfill(.leading)
             }

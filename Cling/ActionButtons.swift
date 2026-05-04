@@ -18,38 +18,51 @@ struct ActionButtons: View {
     @Default(.editorApp) var editorApp
     @Default(.shelfApp) var shelfApp
     @Default(.copyPathsWithTilde) var copyPathsWithTilde
+    @Default(.showActionRow) var showActionRow
+    @Default(.hiddenActionButtons) var hiddenActionButtons
     @ObservedObject var km = KM
 
     var body: some View {
         let inTerminal = appManager.frontmostAppIsTerminal
-        let showingAlternates = km.ralt || km.lalt
+        let showingAlternates = (km.ralt || km.lalt) && !isAnySheetOpen
+        let hidden = Set(hiddenActionButtons)
 
         HStack {
-            if !showingAlternates {
-                openButton(inTerminal: inTerminal)
-                showInFinderButton
-                pasteToFrontmostAppButton(inTerminal: inTerminal)
-                openInTerminalButton
-                openInEditorButton
-                shelveButton
-                Spacer()
-                openWithPickerButton
-                Spacer()
+            if showActionRow {
+                if !showingAlternates {
+                    if !hidden.contains(.open) { openButton(inTerminal: inTerminal) }
+                    if !hidden.contains(.showInFinder) { showInFinderButton }
+                    if !hidden.contains(.pasteToFrontmost) { pasteToFrontmostAppButton(inTerminal: inTerminal) }
+                    if !hidden.contains(.openInTerminal) { openInTerminalButton }
+                    if !hidden.contains(.openInEditor) { openInEditorButton }
+                    if !hidden.contains(.shelve) { shelveButton }
+                    Spacer()
+                    openWithPickerButton
+                    Spacer()
+                } else {
+                    dropToFocusedElementButton
+                    dropToZoneButton
+                    openWithFrontmostAppButton
+                    Spacer()
+                }
+                if !hidden.contains(.copy) {
+                    copyFilesButton.disabled(focused.wrappedValue != .list)
+                }
+                if !hidden.contains(.copyPaths) {
+                    copyPathsButton
+                }
+                if !showingAlternates, !hidden.contains(.moveTo) {
+                    moveToButton
+                }
+                if !hidden.contains(.trash) {
+                    trashButton.disabled(focused.wrappedValue != .list)
+                }
+                if !showingAlternates {
+                    if !hidden.contains(.quicklook) { quicklookButton }
+                    if !hidden.contains(.rename) { renameButton }
+                }
             } else {
-                dropToFocusedElementButton
-                dropToZoneButton
-                openWithFrontmostAppButton
-                Spacer()
-            }
-            copyFilesButton.disabled(focused.wrappedValue != .list)
-            copyPathsButton
-            if !showingAlternates {
-                moveToButton
-            }
-            trashButton.disabled(focused.wrappedValue != .list)
-            if !showingAlternates {
-                quicklookButton
-                renameButton
+                openWithPickerButton
             }
         }
         .font(.system(size: 10))
@@ -434,7 +447,7 @@ struct ActionButtons: View {
         }
         .buttonStyle(.plain)
         .opacity(0)
-        .frame(width: 0)
+        .frame(width: 0, height: 0)
         .sheet(isPresented: $isPresentingOpenWithPicker) {
             OpenWithPickerView(fileURLs: selectedResults.map(\.url))
                 .font(.medium(13))
@@ -508,9 +521,9 @@ struct ActionButtons: View {
             isPresentingRenameView = true
         }
         .sheet(isPresented: $isPresentingRenameView) {
-            RenameView(originalPaths: selectedResults.arr, renamedPaths: $renamedPaths)
+            RenameView(originalPaths: selectedResults.arr, submission: $renameSubmission)
         }
-        .onChange(of: renamedPaths) {
+        .onChange(of: renameSubmission) {
             renameFiles()
         }
         .help("Rename the selected files")
@@ -640,10 +653,10 @@ struct ActionButtons: View {
         NSApp.mainWindow?.becomeKey()
         focus()
 
-        guard let renamedPaths else { return }
+        guard let renameSubmission else { return }
         do {
             let renamed = try performRenameOperation(
-                originalPaths: selectedResults.arr, renamedPaths: renamedPaths
+                originalPaths: renameSubmission.originals, renamedPaths: renameSubmission.renamed
             )
             fuzzy.renamePaths(renamed)
             fuzzy.scoredResults = fuzzy.scoredResults.map { renamed[$0] ?? $0 }
@@ -653,7 +666,7 @@ struct ActionButtons: View {
         } catch {
             log.error("Error renaming files: \(error)")
         }
-        self.renamedPaths = nil
+        self.renameSubmission = nil
     }
 
     private var moveToButton: some View {
@@ -664,11 +677,16 @@ struct ActionButtons: View {
     }
 
     @State private var isPresentingRenameView = false
-    @State private var renamedPaths: [FilePath]? = nil
+    @State private var renameSubmission: RenameSubmission? = nil
     @State private var isPresentingOpenWithPicker = false
     @State private var isPresentingConfirm = false
     @State private var isPresentingCopyToSheet = false
     @State private var isPresentingMoveToSheet = false
+
+    private var isAnySheetOpen: Bool {
+        isPresentingRenameView || isPresentingOpenWithPicker || isPresentingConfirm
+            || isPresentingCopyToSheet || isPresentingMoveToSheet
+    }
 }
 
 // MARK: - FileOperationSheet

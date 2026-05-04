@@ -3,17 +3,28 @@ import Lowtech
 import SwiftUI
 import System
 
+// MARK: - RenameSubmission
+
+struct RenameSubmission: Equatable {
+    var originals: [FilePath]
+    var renamed: [FilePath]
+}
+
 // MARK: - RenameView
 
 struct RenameView: View {
-    init(originalPaths: [FilePath], renamedPaths: Binding<[FilePath]?>) {
+    init(originalPaths: [FilePath], submission: Binding<RenameSubmission?>) {
         let sorted = originalPaths.sorted { $0.string < $1.string }
         self.originalPaths = sorted
-        _renamedPaths = renamedPaths
-        _text = State(initialValue: sorted.map(\.string).joined(separator: "\n"))
+        _submission = submission
+        if sorted.count == 1, let name = sorted[0].lastComponent?.string {
+            _text = State(initialValue: name)
+        } else {
+            _text = State(initialValue: sorted.map(\.string).joined(separator: "\n"))
+        }
     }
 
-    @Binding var renamedPaths: [FilePath]?
+    @Binding var submission: RenameSubmission?
     @Environment(\.dismiss) var dismiss
 
     let originalPaths: [FilePath]
@@ -26,14 +37,12 @@ struct RenameView: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(doRename)
             } else {
-                ScrollView(.horizontal) {
-                    TextEditor(text: $text)
-                        .font(.system(.body, design: .monospaced))
-                        .padding()
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .scrollContentBackground(.hidden)
-                .roundbg(radius: 12, verticalPadding: 2, horizontalPadding: 2, color: .gray.opacity(0.1))
+                TextEditor(text: $text)
+                    .font(.system(.body, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .frame(minHeight: 240)
+                    .roundbg(radius: 12, verticalPadding: 2, horizontalPadding: 2, color: .gray.opacity(0.1))
             }
 
             HStack {
@@ -62,11 +71,27 @@ struct RenameView: View {
     private var singleFile: Bool { originalPaths.count == 1 }
 
     private func doRename() {
+        if singleFile {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                errorMessage = "Filename cannot be empty."
+                return
+            }
+            guard !trimmed.contains("/") else {
+                errorMessage = "Filename cannot contain '/'."
+                return
+            }
+            let parent = originalPaths[0].removingLastComponent()
+            submission = RenameSubmission(originals: originalPaths, renamed: [parent.appending(trimmed)])
+            errorMessage = nil
+            dismiss()
+            return
+        }
         let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
         if lines.count != originalPaths.count {
             errorMessage = "File count mismatch: expected \(originalPaths.count) lines, got \(lines.count)."
         } else {
-            renamedPaths = lines.map { FilePath($0) }
+            submission = RenameSubmission(originals: originalPaths, renamed: lines.map { FilePath($0) })
             errorMessage = nil
             dismiss()
         }

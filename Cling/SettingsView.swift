@@ -19,13 +19,14 @@ let envState = EnvState()
 // MARK: - SettingsCategory
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
-    case general, apps, search, exclusions, about
+    case general, interface, apps, search, exclusions, about
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: "General"
+        case .interface: "Interface"
         case .apps: "Apps"
         case .search: "Search"
         case .exclusions: "Exclusions"
@@ -36,6 +37,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .interface: "slider.horizontal.3"
         case .apps: "app.badge"
         case .search: "magnifyingglass"
         case .exclusions: "eye.slash"
@@ -46,6 +48,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .general: .gray
+        case .interface: .orange
         case .apps: .blue
         case .search: .green
         case .exclusions: .red
@@ -91,6 +94,7 @@ struct SettingsView: View {
     private var detailView: some View {
         switch selection {
         case .general: GeneralSettingsPane().environmentObject(env)
+        case .interface: InterfaceSettingsPane()
         case .apps: AppsSettingsPane()
         case .search: SearchSettingsPane()
         case .exclusions: ExclusionsSettingsPane()
@@ -153,6 +157,68 @@ private struct DescriptiveToggle: View {
             Text(detail)
         }
     }
+}
+
+// MARK: - InterfaceSettingsPane
+
+private struct InterfaceSettingsPane: View {
+    var body: some View {
+        Form {
+            Section("Rows") {
+                DescriptiveToggle(
+                    title: "Action buttons row",
+                    detail: "The bar of buttons under the results: Open, Copy, Trash, Rename, etc.",
+                    isOn: $showActionRow
+                )
+                DescriptiveToggle(
+                    title: "Open With row",
+                    detail: "Quick app shortcuts for opening the selected files.",
+                    isOn: $showOpenWithRow
+                )
+                DescriptiveToggle(
+                    title: "Scripts row",
+                    detail: "Run scripts on the selected files.",
+                    isOn: $showScriptRow
+                )
+            }
+
+            Section {
+                ForEach(HiddenActionButton.allCases, id: \.self) { btn in
+                    Toggle(btn.label, isOn: visibleBinding(for: btn))
+                }
+            } header: {
+                Text("Action Buttons")
+            } footer: {
+                Text("Hiding a button removes it from the action row but keeps its keyboard shortcut working.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(!showActionRow)
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+    }
+
+    @Default(.showActionRow) private var showActionRow
+    @Default(.showOpenWithRow) private var showOpenWithRow
+    @Default(.showScriptRow) private var showScriptRow
+    @Default(.hiddenActionButtons) private var hiddenActionButtons
+
+    private func visibleBinding(for btn: HiddenActionButton) -> Binding<Bool> {
+        Binding(
+            get: { !hiddenActionButtons.contains(btn) },
+            set: { visible in
+                var updated = hiddenActionButtons
+                if visible {
+                    updated.removeAll { $0 == btn }
+                } else if !updated.contains(btn) {
+                    updated.append(btn)
+                }
+                hiddenActionButtons = updated
+            }
+        )
+    }
+
 }
 
 // MARK: - GeneralSettingsPane

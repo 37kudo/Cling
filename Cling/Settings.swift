@@ -304,6 +304,41 @@ let DEFAULT_QUICK_FILTERS = [
     QuickFilter(id: "Xcode Projects", extensions: ".xcodeproj .xcworkspace", preQuery: nil, dirsOnly: true, folders: [HOME], key: "x"),
 ]
 
+// MARK: - HiddenActionButton
+
+enum HiddenActionButton: String, CaseIterable, Defaults.Serializable {
+    case open
+    case showInFinder
+    case pasteToFrontmost
+    case openInTerminal
+    case openInEditor
+    case shelve
+    case moveTo
+    case copy
+    case copyPaths
+    case trash
+    case quicklook
+    case rename
+
+    var label: String {
+        switch self {
+        case .open: "Open (⏎)"
+        case .showInFinder: "Show in Finder (⌘⏎)"
+        case .pasteToFrontmost: "Paste to frontmost app (⌘⇧⏎)"
+        case .openInTerminal: "Open in Terminal (⌘T)"
+        case .openInEditor: "Open in Editor (⌘E)"
+        case .shelve: "Shelve (⌘S)"
+        case .moveTo: "Move to… (⌘M)"
+        case .copy: "Copy (⌘C)"
+        case .copyPaths: "Copy paths (⌘⇧C)"
+        case .trash: "Trash (⌘⌫)"
+        case .quicklook: "Quicklook (⎵)"
+        case .rename: "Rename (⌘R)"
+        }
+    }
+
+}
+
 // MARK: - SearchScope
 
 enum SearchScope: String, CaseIterable, Defaults.Serializable {
@@ -391,6 +426,11 @@ extension Defaults.Keys {
     static let showSearchHints = Key<Bool>("showSearchHints", default: true)
     static let searchHintsManuallyEnabled = Key<Bool>("searchHintsManuallyEnabled", default: false)
     static let searchHintsFirstShownAt = Key<TimeInterval>("searchHintsFirstShownAt", default: 0)
+
+    static let showActionRow = Key<Bool>("showActionRow", default: true)
+    static let showOpenWithRow = Key<Bool>("showOpenWithRow", default: true)
+    static let showScriptRow = Key<Bool>("showScriptRow", default: true)
+    static let hiddenActionButtons = Key<[HiddenActionButton]>("hiddenActionButtons", default: [])
     static let folderFilters = Key<[FolderFilter]>("folderFilters", default: DEFAULT_FOLDER_FILTERS)
     static let maxResultsCount = Key<Int>("maxResultsCount", default: 1000)
     static let externalVolumes = Key<[FilePath]>("externalVolumes", default: [])
