@@ -104,7 +104,7 @@ struct ActionButtons: View {
             // ⌘⏎ Show in Finder
             if isReturn, mods == .command {
                 RH.trackRun(sel)
-                NSWorkspace.shared.activateFileViewerSelecting(sel.map(\.url))
+                revealInFinder(sel.map(\.url))
                 return nil
             }
             // ⏎ Open (default app, non-terminal context)
@@ -337,7 +337,7 @@ struct ActionButtons: View {
     private var showInFinderButton: some View {
         Button("⌘⏎ Show in Finder") {
             RH.trackRun(selectedResults)
-            NSWorkspace.shared.activateFileViewerSelecting(selectedResults.map(\.url))
+            revealInFinder(selectedResults.map(\.url))
         }
         .help("Show the selected files in Finder")
     }

@@ -26,6 +26,7 @@ struct ScoringConfig: Codable, Equatable {
     var rankPrefixMatchBonus = 20
     var rankImportanceMultiplier = 8
     var rankLongPathThreshold = 80
+    var basenameWastePenalty = 2
 
     static func load() -> ScoringConfig {
         guard let data = UserDefaults.standard.data(forKey: "scoringConfig"),
@@ -221,82 +222,100 @@ private func fuzzyScoreBytes(
     if M > N { return nil }
 
     let txtBase = txt.baseAddress!
+    let firstChar = pat[0]
 
-    // Forward scan: find leftmost match using SIMD byte search for each pattern char
-    var pi = 0, sidx = -1, eidx = -1
-    var searchFrom = 0
-    while pi < M {
-        let needle = pat[pi]
-        // Use SIMD for longer texts, scalar for short
-        let pos: Int
-        if N &- searchFrom >= 16 {
-            pos = simdFindByte(txtBase, count: N, needle: needle, from: searchFrom)
-        } else {
-            var p = searchFrom; pos = -1
-            // Inline scalar search
-            var found = -1
-            while p < N {
-                if txtBase[p] == needle { found = p; break }
-                p &+= 1
-            }
-            if found < 0 { return nil }
-            // Use found directly below
-            if sidx < 0 { sidx = found }
+    var bestScore = Int.min
+    var bestStart = -1
+    var bestEnd = -1
+
+    // Anchor enumeration: try matching from each pat[0] occurrence and keep
+    // the best-scoring alignment. Plain leftmost-greedy misses tighter matches:
+    // e.g. "lnr" against "/users/alin/projects/lunar/..." picks 'l' in 'alin'
+    // (cross-segment, low score) and never explores 'lunar' (single-segment,
+    // boundary-aligned, much higher score).
+    var anchorFrom = 0
+    var anchorsTried = 0
+    let maxAnchors = 32
+
+    while anchorsTried < maxAnchors {
+        let anchor = simdFindByte(txtBase, count: N, needle: firstChar, from: anchorFrom)
+        if anchor < 0 { break }
+        if anchor &+ M > N { break }
+
+        // Forward greedy from this anchor
+        var pi = 1
+        var searchFrom = anchor &+ 1
+        var lastPos = anchor
+        var matched = true
+        while pi < M {
+            let pos = simdFindByte(txtBase, count: N, needle: pat[pi], from: searchFrom)
+            if pos < 0 { matched = false; break }
+            lastPos = pos
+            searchFrom = pos &+ 1
             pi &+= 1
-            searchFrom = found &+ 1
-            if pi == M { eidx = found &+ 1 }
-            continue
         }
-        if pos < 0 { return nil }
-        if sidx < 0 { sidx = pos }
-        pi &+= 1
-        searchFrom = pos &+ 1
-        if pi == M { eidx = pos &+ 1 }
-    }
-    guard sidx >= 0, eidx >= 0 else { return nil }
+        // If the suffix can't be matched from this anchor it can't be matched
+        // from any later anchor either: forward-greedy from a > anchor would
+        // either reuse the same suffix positions or skip past them.
+        if !matched { break }
 
-    // Backward scan: tighten match window
-    pi = M &- 1
-    var bi = eidx &- 1
-    while bi >= sidx {
-        if txtBase[bi] == pat[pi] {
-            pi &-= 1
-            if pi < 0 { sidx = bi; break }
+        let eidx = lastPos &+ 1
+        var sidx = anchor
+
+        // Backward tighten within [anchor, eidx)
+        pi = M &- 1
+        var bi = eidx &- 1
+        while bi >= anchor {
+            if txtBase[bi] == pat[pi] {
+                pi &-= 1
+                if pi < 0 { sidx = bi; break }
+            }
+            bi &-= 1
         }
-        bi &-= 1
-    }
 
-    var score = 0, consecutive = 0, firstBonus = 0, inGap = false
-    var prevCC = sidx > 0 ? ccTable[Int(txt[sidx &- 1])].rawValue : CC.delim.rawValue
-    pi = 0
-    for i in sidx ..< eidx {
-        let b = txt[i]
-        let curCC = ccTable[Int(b)].rawValue
-        if toLowerByte(b) == pat[pi] {
-            score &+= scoreMatch
-            var bonus = bonusFlat[prevCC &* ccCount &+ curCC]
-            // Use precomputed boundary info to restore camelCase/delimiter bonuses lost by lowercasing
-            if boundaries != 0 {
-                let bpos = i &- boundariesOffset
-                if bpos >= 0, bpos < 64, boundaries & (1 << UInt64(bpos)) != 0 {
-                    bonus = max(bonus, bonusBoundary)
+        // Score the alignment within [sidx, eidx)
+        var score = 0, consecutive = 0, firstBonus = 0, inGap = false
+        var prevCC = sidx > 0 ? ccTable[Int(txt[sidx &- 1])].rawValue : CC.delim.rawValue
+        pi = 0
+        for i in sidx ..< eidx {
+            let b = txt[i]
+            let curCC = ccTable[Int(b)].rawValue
+            if toLowerByte(b) == pat[pi] {
+                score &+= scoreMatch
+                var bonus = bonusFlat[prevCC &* ccCount &+ curCC]
+                // Use precomputed boundary info to restore camelCase/delimiter bonuses lost by lowercasing
+                if boundaries != 0 {
+                    let bpos = i &- boundariesOffset
+                    if bpos >= 0, bpos < 64, boundaries & (1 << UInt64(bpos)) != 0 {
+                        bonus = max(bonus, bonusBoundary)
+                    }
                 }
-            }
-            if consecutive == 0 {
-                firstBonus = bonus
+                if consecutive == 0 {
+                    firstBonus = bonus
+                } else {
+                    if bonus >= bonusBoundary, bonus > firstBonus { firstBonus = bonus }
+                    bonus = max(bonus, max(bonusConsec, firstBonus))
+                }
+                score &+= pi == 0 ? bonus &* firstCharMul : bonus
+                inGap = false; consecutive &+= 1; pi &+= 1
             } else {
-                if bonus >= bonusBoundary, bonus > firstBonus { firstBonus = bonus }
-                bonus = max(bonus, max(bonusConsec, firstBonus))
+                score &+= inGap ? gapExtend : gapStart
+                inGap = true; consecutive = 0; firstBonus = 0
             }
-            score &+= pi == 0 ? bonus &* firstCharMul : bonus
-            inGap = false; consecutive &+= 1; pi &+= 1
-        } else {
-            score &+= inGap ? gapExtend : gapStart
-            inGap = true; consecutive = 0; firstBonus = 0
+            prevCC = curCC
         }
-        prevCC = curCC
+
+        if score > bestScore {
+            bestScore = score
+            bestStart = sidx
+            bestEnd = eidx
+        }
+
+        anchorFrom = anchor &+ 1
+        anchorsTried &+= 1
     }
-    return (score, sidx, eidx)
+
+    return bestStart < 0 ? nil : (bestScore, bestStart, bestEnd)
 }
 
 // MARK: - Letter Bitmask (a-z + 0-9 + . - _)
@@ -1439,7 +1458,7 @@ final class SearchEngine: @unchecked Sendable {
         }
         // Separate dir-segment tokens (ending with '/') from plain fuzzy tokens.
         // Dir-segment tokens like "rcmd/" require a literal substring "rcmd/" in the path (not fuzzy).
-        func isDirSegment(_ t: Substring) -> Bool { t.hasSuffix("/") && t.count > 1 }
+        func isDirSegment(_ t: Substring) -> Bool { t.hasSuffix("/") && t.count > 1 && !isInToken(t) && !isDepthToken(t) }
         let dirSegments: [[UInt8]] = qTokens.compactMap { isDirSegment($0) ? Array(String($0).utf8) : nil }
         let fuzzyTokens = qTokens.filter { !isExtToken($0) && !isInToken($0) && !isDirSegment($0) && !isDepthToken($0) }.map(String.init)
         // Effective depth limit: smallest of query depth tokens and the explicit parameter
@@ -2316,17 +2335,25 @@ final class SearchEngine: @unchecked Sendable {
                             }
 
                             let tight = hasBase ? baseWindow : pathWindow
+                            // Penalize unmatched basename bytes so tight matches in short
+                            // basenames (e.g. "mkfl" → "Makefile") beat sparse matches in
+                            // long camelCase basenames (e.g. "...MaskForLocal...").
+                            let basenameWaste = hasBase ? max(0, bnLen - baseWindow) : 0
+                            let adjBaseScore = baseScore &- basenameWaste &* SC.basenameWastePenalty
                             let sTight = Int32(-tight)
-                            let sBase = Int32(hasBase ? baseScore : -1000)
+                            let sBase = Int32(hasBase ? adjBaseScore : -1000)
                             let sPath = Int32(hasPath ? pathScore : -1000)
                             let sDir = Int32(wantDir ? (e.isDir ? 100 : -100) : 0)
                             let sDepth = Int32(-e.segCount)
                             let sShorter = Int32(-e.pathLen)
 
-                            let best = max(hasBase ? baseScore : 0, hasPath ? pathScore : 0)
+                            // When hasBase, pathScore for a non-slash query usually matches the
+                            // same characters in the basename, so taking max() with raw pathScore
+                            // would discard the waste penalty. Prefer adjBaseScore in that case.
+                            let best = hasBase ? adjBaseScore : (hasPath ? pathScore : 0)
                             let queryLen = !qBytes.isEmpty ? qBytes.count : dirSegments.reduce(0) { $0 + $1.count }
                             let qual: Int = if hasBase {
-                                baseScore * baseBytes.count / max(baseWindow, 1)
+                                adjBaseScore * baseBytes.count / max(baseWindow, 1)
                             } else if tokenBytes != nil {
                                 // Multi-token: use score directly since window spans across segments
                                 pathScore
@@ -2380,7 +2407,15 @@ final class SearchEngine: @unchecked Sendable {
         if !scored.isEmpty {
             let topQ = scored[0].quality
             let minQ = max(topQ * 4 / 10, qBytes.count * scoreMatch / 2)
-            scored = scored.filter { $0.quality >= minQ }
+            let filtered = scored.filter { $0.quality >= minQ }
+            // If the strict density-based floor kills every match (typical for
+            // a dense single-token query like "prvskyl" that legitimately spans
+            // multiple path segments — quality = pathScore * qLen / window
+            // collapses with wide windows), fall back to the unfiltered set so
+            // the user sees low-density matches instead of zero results.
+            if !filtered.isEmpty {
+                scored = filtered
+            }
         }
 
         // Keep a wider pool (4x maxResults) then sort by rank to ensure high-scoring

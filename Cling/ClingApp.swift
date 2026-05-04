@@ -242,6 +242,7 @@ class AppDelegate: LowtechProAppDelegate {
     }
 
     func hideOrCloseMainWindow(_ window: NSWindow) {
+        FUZZY.cancelPendingSearch()
         if Defaults[.instantMode] {
             window.animationBehavior = .none
             window.alphaValue = 0

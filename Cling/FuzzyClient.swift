@@ -1112,8 +1112,21 @@ class FuzzyClient {
     func invalidateSearch() {
         lastSearchQuery = "\0"
     }
+    /// Cancel the 150ms query-typing debounce so a search doesn't fire after
+    /// the window has been closed.
+    func cancelPendingSearch() {
+        querySendTask = nil
+        searchTask?.cancel()
+    }
     func performSearch() {
         searchTask?.cancel()
+        // Skip stray fires after the window dismisses — only the UI consumes
+        // scoredResults/results, and the TextField binding can commit a final
+        // update post-close that re-arms the 150ms typing debounce.
+        guard WM.mainWindowActive else {
+            querySendTask = nil
+            return
+        }
 
         if emptyQuery, volumeFilter == nil {
             scoredResults = []

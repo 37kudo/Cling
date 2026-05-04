@@ -564,6 +564,10 @@ struct ContentView: View {
 
     private var searchBarTrailingButtons: some View {
         HStack(spacing: 6) {
+            Text("press / to focus")
+                .round(10)
+                .foregroundStyle(.secondary)
+                .opacity(focused != .search ? 1 : 0)
             Group {
                 if fuzzy.searching {
                     ProgressView()
@@ -572,10 +576,6 @@ struct ContentView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.15), value: fuzzy.searching)
-            Text("press / to focus")
-                .round(10)
-                .foregroundStyle(.secondary)
-                .opacity(focused != .search ? 1 : 0)
             xButton
             historyButton
             saveFilterButton
@@ -783,51 +783,63 @@ struct ContentView: View {
     }
 
     private var searchBar: some View {
-        TextField(placeholderHint, text: $fuzzy.query)
-            .textFieldStyle(.plain)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.quaternary, lineWidth: 0.5))
-            .padding(.vertical)
-            .focused($focused, equals: .search)
-            .onChange(of: fuzzy.query) {
-                if navigatingHistory {
-                    navigatingHistory = false
-                } else {
-                    historyIndex = -1
-                    suggestionIndex = -1
-                    let isFocused = focused == .search
-                    let hasQuery = !fuzzy.query.isEmpty
-                    showHistorySuggestions = isFocused && hasQuery
-                }
-                if showFullHistory { showFullHistory = false }
+        ZStack(alignment: .leading) {
+            if fuzzy.query.isEmpty {
+                Text(LocalizedStringKey(placeholderHint))
+                    .foregroundStyle(Color(nsColor: .placeholderTextColor))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .id(placeholderHint)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
             }
-            .onChange(of: focused) {
+            TextField("", text: $fuzzy.query)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .focused($focused, equals: .search)
+                .modifier(SearchBarKeyHandlers(
+                    focused: $focused,
+                    query: $fuzzy.query,
+                    historyIndex: $historyIndex,
+                    querySaved: $querySaved,
+                    navigatingHistory: $navigatingHistory,
+                    showHistorySuggestions: $showHistorySuggestions,
+                    suggestionIndex: $suggestionIndex,
+                    historySuggestions: historySuggestions
+                ))
+        }
+        .animation(.easeInOut(duration: 0.45), value: placeholderHint)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.quaternary, lineWidth: 0.5))
+        .padding(.vertical)
+        .onChange(of: fuzzy.query) {
+            if navigatingHistory {
+                navigatingHistory = false
+            } else {
+                historyIndex = -1
                 suggestionIndex = -1
-                showHistorySuggestions = focused == .search && !fuzzy.query.isEmpty
+                let isFocused = focused == .search
+                let hasQuery = !fuzzy.query.isEmpty
+                showHistorySuggestions = isFocused && hasQuery
             }
-            .modifier(SearchBarKeyHandlers(
-                focused: $focused,
-                query: $fuzzy.query,
-                historyIndex: $historyIndex,
-                querySaved: $querySaved,
-                navigatingHistory: $navigatingHistory,
-                showHistorySuggestions: $showHistorySuggestions,
-                suggestionIndex: $suggestionIndex,
-                historySuggestions: historySuggestions
-            ))
-            .task(id: shouldCyclePlaceholder) {
-                guard shouldCyclePlaceholder else {
-                    placeholderHint = "Search"
-                    return
-                }
-                while !Task.isCancelled, shouldCyclePlaceholder {
-                    placeholderHint = ContentView.placeholderExamples[placeholderIndex]
-                    placeholderIndex = (placeholderIndex + 1) % ContentView.placeholderExamples.count
-                    try? await Task.sleep(nanoseconds: 3_500_000_000)
-                }
+            if showFullHistory { showFullHistory = false }
+        }
+        .onChange(of: focused) {
+            suggestionIndex = -1
+            showHistorySuggestions = focused == .search && !fuzzy.query.isEmpty
+        }
+        .task(id: shouldCyclePlaceholder) {
+            guard shouldCyclePlaceholder else {
+                placeholderHint = "Search"
+                return
             }
+            while !Task.isCancelled, shouldCyclePlaceholder {
+                placeholderHint = ContentView.placeholderExamples[placeholderIndex]
+                placeholderIndex = (placeholderIndex + 1) % ContentView.placeholderExamples.count
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+            }
+        }
     }
 
     @State private var placeholderHint = "Search"
@@ -839,13 +851,15 @@ struct ContentView: View {
 
     private static let placeholderExamples = [
         "Search",
-        "Example: report 2024 .pdf",
-        "Example: .png .jpg",
-        "Example: in:~/Downloads .dmg",
-        "Example: depth:1 in:~/Projects",
-        "Example: config/ .toml .yaml",
-        "Example: *.swift in:~/Projects",
-        "Example: invoice .pdf",
+        "Example: **`invoice .pdf`** *(finds PDF invoices)*",
+        "Example: **`.png .jpg`** *(filters common image formats)*",
+        "Example: **`in:~/Downloads .dmg`** *(finds downloaded DMGs)*",
+        "Example: **`contract .docx`** *(shows contracts in Word format)*",
+        "Example: **`depth:1 in:~/Documents`** *(searches Documents folder non-recursively)*",
+        "Example: **`config/ .toml .yaml`** *(finds configuration files)*",
+        "Example: **`.mkv .mp4 in:~/Movies`** *(shows common video files)*",
+        "Example: **`.md in:~/Notes`** *(finds Markdown notes)*",
+        "Example: **`brew python`** *(shows installed Python versions)*",
     ]
 
     private var xButton: some View {
@@ -1064,7 +1078,7 @@ struct ContentView: View {
             if existing.isEmpty {
                 pathNotFoundMessage = paths.map(\.string).joined(separator: "\n")
             } else {
-                NSWorkspace.shared.activateFileViewerSelecting(existing.map(\.url))
+                revealInFinder(existing.map(\.url))
             }
         }
         Divider()

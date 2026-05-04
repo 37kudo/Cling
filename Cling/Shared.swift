@@ -1,5 +1,17 @@
+import AppKit
 import Lowtech
 import UniformTypeIdentifiers
+
+/// Reveal files in Finder. activateFileViewerSelecting alone doesn't reliably
+/// bring up a Finder window when Finder has no windows visible — opening the
+/// parent dirs first guarantees a window exists, then the selection sticks.
+func revealInFinder(_ urls: [URL]) {
+    guard !urls.isEmpty else { return }
+    for parent in Set(urls.map { $0.deletingLastPathComponent() }) {
+        NSWorkspace.shared.open(parent)
+    }
+    NSWorkspace.shared.activateFileViewerSelecting(urls)
+}
 
 extension UTType {
     static let avif = UTType("public.avif")
