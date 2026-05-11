@@ -5,12 +5,28 @@
 //  Created by Alin Panaitiu on 03.02.2025.
 //
 
+import AppKit
 import Defaults
 import Lowtech
 import LowtechPro
 import SwiftUI
 import System
 import UniformTypeIdentifiers
+
+// Returns true if an IME (CJK input method, etc.) is currently composing text
+// in the focused responder. Key handlers should defer to the IME in that case.
+@inline(__always)
+func isIMEComposing() -> Bool {
+    if let client = NSTextInputContext.current?.client, client.hasMarkedText() {
+        return true
+    }
+    if let responder = NSApp.keyWindow?.firstResponder as? NSTextInputClient,
+       responder.hasMarkedText()
+    {
+        return true
+    }
+    return false
+}
 
 extension Int {
     var humanSize: String {
@@ -117,6 +133,12 @@ struct ContentView: View {
                         if event.keyCode == 53, // escape
                            showHistorySuggestions
                         {
+                            // Let IME consume Esc to cancel composition.
+                            if let responder = event.window?.firstResponder as? NSTextInputClient,
+                               responder.hasMarkedText()
+                            {
+                                return event
+                            }
                             showHistorySuggestions = false
                             suggestionIndex = -1
                             return nil
@@ -691,9 +713,30 @@ struct ContentView: View {
     private func installContentShortcutMonitor() {
         guard contentShortcutMonitor == nil else { return }
         contentShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Sample IME marked-text state AFTER the field editor handles this
+            // keystroke, so the search placeholder hides during composition.
+            // Only matters while the query is empty (otherwise the placeholder
+            // is already hidden) and when no ⌘/⌃ shortcut is in flight.
+            if focused == .search, fuzzy.query.isEmpty {
+                let evMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if !evMods.contains(.command), !evMods.contains(.control) {
+                    DispatchQueue.main.async {
+                        let composing = (NSApp.keyWindow?.firstResponder as? NSTextInputClient)?.hasMarkedText() ?? false
+                        if composing != imeComposing { imeComposing = composing }
+                    }
+                }
+            } else if imeComposing {
+                imeComposing = false
+            }
             if NSApp.keyWindow?.attachedSheet != nil { return event }
             if DropZoneOverlay.shared.isPresenting { return event }
             if event.window !== AppDelegate.shared.mainWindow { return event }
+            // Let IME handle keys (Esc/arrows/Return/etc.) during active composition.
+            if let responder = event.window?.firstResponder as? NSTextInputClient,
+               responder.hasMarkedText()
+            {
+                return event
+            }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let kc = event.keyCode
             let chars = (event.charactersIgnoringModifiers ?? "").lowercased()
@@ -779,6 +822,7 @@ struct ContentView: View {
     @State private var navigatingHistory = false
     @State private var showHistorySuggestions = false
     @State private var suggestionIndex = -1
+    @State private var imeComposing = false
 
     private var historySuggestions: [String] {
         let trimmed = fuzzy.query.trimmingCharacters(in: .whitespaces)
@@ -789,7 +833,7 @@ struct ContentView: View {
 
     private var searchBar: some View {
         ZStack(alignment: .leading) {
-            if fuzzy.query.isEmpty {
+            if fuzzy.query.isEmpty, !imeComposing {
                 Text(LocalizedStringKey(placeholderHint))
                     .foregroundStyle(Color(nsColor: .placeholderTextColor))
                     .padding(.horizontal, 10)
@@ -828,11 +872,13 @@ struct ContentView: View {
                 let hasQuery = !fuzzy.query.isEmpty
                 showHistorySuggestions = isFocused && hasQuery
             }
+            if imeComposing { imeComposing = false }
             if showFullHistory { showFullHistory = false }
         }
         .onChange(of: focused) {
             suggestionIndex = -1
             showHistorySuggestions = focused == .search && !fuzzy.query.isEmpty
+            if focused != .search, imeComposing { imeComposing = false }
         }
         .task(id: shouldCyclePlaceholder) {
             guard shouldCyclePlaceholder else {
@@ -1415,6 +1461,7 @@ struct SearchBarKeyHandlers: ViewModifier {
         content
             .onKeyPress(.upArrow) {
                 guard focused.wrappedValue == .search else { return .ignored }
+                if isIMEComposing() { return .ignored }
                 if showHistorySuggestions, !historySuggestions.isEmpty, historyIndex < 0 {
                     if suggestionIndex > 0 {
                         suggestionIndex -= 1
@@ -1437,6 +1484,7 @@ struct SearchBarKeyHandlers: ViewModifier {
             }
             .onKeyPress(.downArrow) {
                 guard focused.wrappedValue == .search else { return .ignored }
+                if isIMEComposing() { return .ignored }
                 if historyIndex > 0 {
                     historyIndex -= 1
                     navigatingHistory = true
@@ -1462,6 +1510,7 @@ struct SearchBarKeyHandlers: ViewModifier {
             }
             .onKeyPress(.tab) {
                 guard focused.wrappedValue == .search else { return .ignored }
+                if isIMEComposing() { return .ignored }
                 let suggestions = historySuggestions
                 if showHistorySuggestions, !suggestions.isEmpty {
                     let suggestion = suggestions[max(suggestionIndex, 0)]
@@ -1478,6 +1527,7 @@ struct SearchBarKeyHandlers: ViewModifier {
             }
             .onKeyPress(.return, phases: [.down]) { _ in
                 guard focused.wrappedValue == .search else { return .ignored }
+                if isIMEComposing() { return .ignored }
                 if historyIndex >= 0 {
                     historyIndex = -1
                     return .handled

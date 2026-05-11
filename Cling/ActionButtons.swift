@@ -105,6 +105,12 @@ struct ActionButtons: View {
             if NSApp.keyWindow?.attachedSheet != nil { return event }
             if DropZoneOverlay.shared.isPresenting { return event }
             if event.window !== AppDelegate.shared.mainWindow { return event }
+            // Let an active IME (Pinyin etc.) commit/navigate during composition.
+            if let responder = event.window?.firstResponder as? NSTextInputClient,
+               responder.hasMarkedText()
+            {
+                return event
+            }
 
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let chars = (event.charactersIgnoringModifiers ?? "").lowercased()
