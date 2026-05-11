@@ -3,6 +3,23 @@
     <channel>
         <title>Cling</title>
         <item>
+            <title>2.3.2</title>
+            <pubDate>Mon, 11 May 2026 17:57:51 +0300</pubDate>
+            <link>https://lowtechguys.com/cling</link>
+            <sparkle:fullReleaseNotesLink>https://files.lowtechguys.com/cling/changelog.html</sparkle:fullReleaseNotesLink>
+            <sparkle:version>2.3.2</sparkle:version>
+            <sparkle:shortVersionString>2.3.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://files.lowtechguys.com/ReleaseNotes/Cling-2.3.2.html</sparkle:releaseNotesLink>
+            <enclosure url="https://files.lowtechguys.com/releases/Cling-2.3.2.dmg" length="14715977" type="application/octet-stream" sparkle:edSignature="KFuCtUmwka1ghIIaWoIevjDWBA3VXYhyNwqcX4CcrOFhYT+HuKNp4xeyzubKQVi7qymKeSrejd3UiE+vqvncAg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://files.lowtechguys.com/releases/Cling2.3.2-2.3.1.delta" sparkle:deltaFrom="2.3.1" length="1692686" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="06XyGMjFjx8JHvH8cLjmJ3pDjcCXQw4ukDYn89l/rbPNVAnRaRkCdAnvd8teJEPlHlzxAtTS23dFoatu9z33Cw=="/>
+                <enclosure url="https://files.lowtechguys.com/releases/Cling2.3.2-2.3.0.delta" sparkle:deltaFrom="2.3.0" length="1771766" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="wx8Q+T3SCk02Z8EAtzsdMJnXf9xycTSNmw+OedNiaHUKmHZFogX5KmvwfvUuWthLOyScjB7nP32p83h7zAP7Dg=="/>
+                <enclosure url="https://files.lowtechguys.com/releases/Cling2.3.2-2.2.0.delta" sparkle:deltaFrom="2.2.0" length="2246682" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="1dAe6h6KtrgTgUa7jOq9wswUskX0kyA7xeAcl4KQ/a4LtNwKQAG0nmNMz9LwC7UiLIczHStgJKAZuDqJXAI3Ag=="/>
+                <enclosure url="https://files.lowtechguys.com/releases/Cling2.3.2-2.1.3.delta" sparkle:deltaFrom="2.1.3" length="2722234" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="HDocOg6/rZwVPBv5UcbiSPhE3gXiXZ+a1R6lxixqeCut9Vtdjx5QjyAeLwYcWXcTNJy6LMmFeEWzzW2kTp5oCw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.3.1</title>
             <pubDate>Wed, 06 May 2026 17:34:24 +0300</pubDate>
             <link>https://lowtechguys.com/cling</link>
@@ -138,17 +155,6 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:releaseNotesLink>https://files.lowtechguys.com/ReleaseNotes/Cling-2.0.0.html</sparkle:releaseNotesLink>
             <enclosure url="https://files.lowtechguys.com/releases/Cling-2.0.0.dmg" length="15839119" type="application/octet-stream" sparkle:edSignature="F/m6RsW/3xWkYS5bx8ZF+G8ZJRl+9A3NlSp13TCjoegWaf+ZymiiRgX2BSUfwgGM8IRaXNA82fvGpF+7gpXYAA=="/>
-        </item>
-        <item>
-            <title>1.2.2</title>
-            <pubDate>Fri, 18 Jul 2025 22:18:32 +0300</pubDate>
-            <link>https://lowtechguys.com/cling</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/FuzzyIdeas/Cling/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>1.2.2</sparkle:version>
-            <sparkle:shortVersionString>1.2.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:releaseNotesLink>https://files.lowtechguys.com/ReleaseNotes/Cling-1.2.2.html</sparkle:releaseNotesLink>
-            <enclosure url="https://files.lowtechguys.com/releases/Cling-1.2.2.dmg" length="18688546" type="application/octet-stream" sparkle:edSignature="hIGFlBUU98Gh4k/pl5jJCrQk1aBlX6RaCXnqowiOFbpLt9Ei8TdftdXBh/TDi8XiYX//bbpfo1iQsw6ojsOtDA=="/>
         </item>
     </channel>
 </rss>
