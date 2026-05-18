@@ -53,6 +53,10 @@ A Pro license costs **€12**, one-time purchase, for life. It can be activated 
 
 *Activating a 6th Mac automatically deactivates the oldest one, so the license can be used indefinitely as you change machines.*
 
+### Raycast extension
+
+[Cling's Raycast extension](https://www.raycast.com/alin/cling) can fuzzy search files instantly, act on files and save often used queries from the same familiar Raycast interface.
+
 ---
 
 ### Comparison with other apps

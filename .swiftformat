@@ -44,7 +44,7 @@
 --ranges spaced
 --redundanttype inferred
 --self remove
---selfrequired
+--selfrequired os_log,os_signpost,debug,info,notice,warning,error,fault,verbose
 --semicolons inline
 --shortoptionals always
 --smarttabs enabled
