@@ -171,6 +171,18 @@ class FuzzyClient {
     var scoredResults: [FilePath] = []
     var recents: [FilePath] = [] // Merged default results (live index + MDQuery)
     var sortedRecents: [FilePath] = [] // Same, sorted by current sort field
+    var filesOnlyResults: Bool = Defaults[.filesOnlyResults] {
+        didSet {
+            guard filesOnlyResults != oldValue else { return }
+            Defaults[.filesOnlyResults] = filesOnlyResults
+            if noQuery, volumeFilter == nil {
+                performUpdateDefaultResults()
+            } else {
+                invalidateSearch()
+                performSearch()
+            }
+        }
+    }
     @ObservationIgnored var mdQueryRecents: [FilePath] = [] // Raw MDQuery results (filtered)
     var commonOpenWithApps: [URL] = []
     var openWithAppShortcuts: [URL: Character] = [:]
@@ -1182,6 +1194,7 @@ class FuzzyClient {
             }
         }()
         let wantVolumeFilter = volumeFilter != nil
+        let filesOnlyResults = filesOnlyResults
 
         // Combine folder prefixes with volume prefix
         var allPrefixes = folderPrefixes
@@ -1245,6 +1258,7 @@ class FuzzyClient {
                 var firstResults = firstEng.engine.search(
                     query: query, maxResults: maxResults, folderPrefixes: allPrefixes,
                     excludedPaths: removedPaths.isEmpty ? nil : removedPaths,
+                    filesOnly: filesOnlyResults,
                     maxDepth: activeMaxDepth,
                     candidatePool: firstPool, cancelled: { cancelFlag }
                 )
@@ -1281,6 +1295,7 @@ class FuzzyClient {
                                 var results = eng.engine.search(
                                     query: query, maxResults: maxResults, folderPrefixes: allPrefixes,
                                     excludedPaths: removedPaths.isEmpty ? nil : removedPaths,
+                                    filesOnly: filesOnlyResults,
                                     maxDepth: activeMaxDepth,
                                     candidatePool: pool, cancelled: { cancelFlag }
                                 )
@@ -1547,7 +1562,8 @@ class FuzzyClient {
             let change = liveIndexChanges[ci]
             if change.kind != .removed, !seen.contains(change.path),
                isRelevantDefaultPath(change.path),
-               let fp = change.path.filePath, fp.exists
+               let fp = change.path.filePath, fp.exists,
+               !filesOnlyResults || !fp.isDir
             {
                 seen.insert(change.path)
                 results.append(fp)
@@ -1557,6 +1573,7 @@ class FuzzyClient {
 
         // 2. MDQuery recents (already filtered by isRelevantDefaultPath in getPaths)
         for fp in mdQueryRecents where !seen.contains(fp.string) {
+            if filesOnlyResults, fp.isDir { continue }
             seen.insert(fp.string)
             results.append(fp)
             if results.count >= maxResults { break }

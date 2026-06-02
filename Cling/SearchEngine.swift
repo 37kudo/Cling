@@ -1414,6 +1414,7 @@ final class SearchEngine: @unchecked Sendable {
         excludedPaths: Set<String>? = nil,
         suffixPattern: String? = nil,
         dirsOnly: Bool = false,
+        filesOnly: Bool = false,
         maxDepth: Int? = nil,
         candidatePool: [Int]? = nil,
         cancelled: (() -> Bool)? = nil
@@ -1484,6 +1485,7 @@ final class SearchEngine: @unchecked Sendable {
         let q = fuzzyTokens.joined()
         // Dirs-only when the query is solely dir segments (e.g. "rcmd/" with no fuzzy/ext tokens)
         let dirsOnly = dirsOnly || (!dirSegments.isEmpty && fuzzyTokens.isEmpty && extTokenBytes.isEmpty)
+        let filesOnly = filesOnly && !dirsOnly
         let hasFuzzyQuery = !q.isEmpty || !extTokenBytes.isEmpty || !dirSegments.isEmpty
 
         // APFS stores paths in NFD (decomposed Unicode), so normalize query to NFD for primary matching.
@@ -1494,7 +1496,9 @@ final class SearchEngine: @unchecked Sendable {
         let qAltBytes: [UInt8]? = (qNFC != qNFD) ? Array(qNFC.utf8) : nil
         let qMask: UInt64 = !qBytes.isEmpty ? qBytes.withUnsafeBufferPointer { letterMaskBytes($0) } : 0
         // Per-token byte arrays for independent multi-token scoring
-        let tokenBytes: [[UInt8]]? = fuzzyTokens.count > 1 ? fuzzyTokens.map { Array($0.utf8) } : nil
+        let tokenBytes: [[UInt8]]? = fuzzyTokens.count > 1 ? fuzzyTokens.map {
+            Array($0.decomposedStringWithCanonicalMapping.utf8)
+        } : nil
         // Bitmask filter uses only ASCII letters/digits, which are identical across NFC/NFD, so no alt mask needed
         // Include extension token letters in the mask for candidate filtering
         var extMask: UInt64 = 0
@@ -1534,6 +1538,8 @@ final class SearchEngine: @unchecked Sendable {
         let baseMask: UInt64 = !baseBytes.isEmpty ? baseBytes.withUnsafeBufferPointer { letterMaskBytes($0) } : 0
         let suffixBytes: [UInt8]? = suffixPattern.map { Array($0.lowercased().utf8) }
         let queryHasDot = qBytes.contains(0x2E) || !extTokenBytes.isEmpty
+        let needsLiteralQueryPrefilter = hasFuzzyQuery && qMask == 0 && !qBytes.isEmpty && tokenBytes == nil
+        let needsLiteralTokenPrefilter = hasFuzzyQuery && qMask == 0 && tokenBytes != nil
 
         // Path importance prefixes for scoring (lowercased to match allBytes)
         let homePrefix = NSHomeDirectory().lowercased()
@@ -1608,9 +1614,55 @@ final class SearchEngine: @unchecked Sendable {
         let isCancelled = cancelled ?? { false }
 
         // Common filter: mask, extension ID, excluded IDs/prefixes
+        @inline(__always) func containsBytes(needle: [UInt8], haystackOffset off: Int, haystackLength len: Int) -> Bool {
+            let nLen = needle.count
+            guard nLen > 0, len >= nLen else { return false }
+            var pos = 0
+            let limit = len - nLen
+            while pos <= limit {
+                var matched = true
+                var j = 0
+                while j < nLen {
+                    if allBytes[off + pos + j] != needle[j] {
+                        matched = false
+                        break
+                    }
+                    j &+= 1
+                }
+                if matched { return true }
+                pos &+= 1
+            }
+            return false
+        }
+
+        @inline(__always) func containsAllBytes(needles: [[UInt8]], haystackOffset off: Int, haystackLength len: Int) -> Bool {
+            var ti = 0
+            while ti < needles.count {
+                if !containsBytes(needle: needles[ti], haystackOffset: off, haystackLength: len) {
+                    return false
+                }
+                ti &+= 1
+            }
+            return true
+        }
+
         @inline(__always) func applyBaseFilters(_ i: Int) -> Bool {
             if hasFuzzyQuery, masks[i] & combinedMask != combinedMask { return false }
             if !hasFuzzyQuery, masks[i] == 0 { return false }
+
+            let off = byteOffsets[i]
+            let len = byteLengths[i]
+
+            if needsLiteralQueryPrefilter, !containsBytes(needle: qBytes, haystackOffset: off, haystackLength: len) {
+                return false
+            }
+            if needsLiteralTokenPrefilter, let tokens = tokenBytes {
+                let haystackOffset = hasSlash ? off : off + entries[i].bnStart
+                let haystackLength = hasSlash ? len : len - entries[i].bnStart
+                if !containsAllBytes(needles: tokens, haystackOffset: haystackOffset, haystackLength: haystackLength) {
+                    return false
+                }
+            }
 
             // Extension ID prefilter: O(1) check instead of scoring all candidates
             if !extTokenIDs.isEmpty {
@@ -1625,9 +1677,6 @@ final class SearchEngine: @unchecked Sendable {
             }
 
             if let excl = excludedIDs, excl.contains(i) { return false }
-
-            let off = byteOffsets[i]
-            let len = byteLengths[i]
 
             // Byte suffix fallback for extensions not in extToID (rare extensions)
             if extTokenIDs.count < extTokenBytes.count {
@@ -1699,6 +1748,7 @@ final class SearchEngine: @unchecked Sendable {
             guard applyBaseFilters(i) else { return false }
 
             if dirsOnly, !entries[i].isDir { return false }
+            if filesOnly, entries[i].isDir { return false }
 
             if let sfx = suffixBytes {
                 let off = byteOffsets[i]
@@ -1744,7 +1794,11 @@ final class SearchEngine: @unchecked Sendable {
             var pi = 0
             while pi < pool.count {
                 let i = pool[pi]
-                if applyBaseFilters(i), matchesFolderPrefix(i), depthOK(i) { cands.append(i) }
+                if applyBaseFilters(i),
+                   (!filesOnly || !entries[i].isDir),
+                   matchesFolderPrefix(i),
+                   depthOK(i)
+                { cands.append(i) }
                 pi &+= 1
             }
         } else if let prefixBytes = folderPrefixBytes, let sorted = sortedByPath {
@@ -1800,6 +1854,19 @@ final class SearchEngine: @unchecked Sendable {
 
                         let off = byteOffsets[i]
                         let len = byteLengths[i]
+
+                        if needsLiteralQueryPrefilter, !containsBytes(needle: qBytes, haystackOffset: off, haystackLength: len) {
+                            i &+= 1
+                            continue
+                        }
+                        if needsLiteralTokenPrefilter, let tokens = tokenBytes {
+                            let haystackOffset = hasSlash ? off : off + self.entries[i].bnStart
+                            let haystackLength = hasSlash ? len : len - self.entries[i].bnStart
+                            if !containsAllBytes(needles: tokens, haystackOffset: haystackOffset, haystackLength: haystackLength) {
+                                i &+= 1
+                                continue
+                            }
+                        }
 
                         // Byte suffix fallback for extensions not in extToID (rare extensions)
                         if extTokenIDs.count < extTokenBytes.count {
@@ -1860,6 +1927,7 @@ final class SearchEngine: @unchecked Sendable {
                         }
 
                         if dirsOnly, !entries[i].isDir { i &+= 1; continue }
+                        if filesOnly, entries[i].isDir { i &+= 1; continue }
 
                         if let sfx = suffixBytes {
                             if len < sfx.count { i &+= 1; continue }
@@ -2161,7 +2229,11 @@ final class SearchEngine: @unchecked Sendable {
 
                                 hasBase = baseScore > Int.min
                                 hasPath = pathScore > Int.min
-                                guard hasBase || hasPath else { idx &+= 1; continue }
+                                if !hasSlash {
+                                    guard hasBase else { idx &+= 1; continue }
+                                } else {
+                                    guard hasBase || hasPath else { idx &+= 1; continue }
+                                }
                             } else if !dirSegments.isEmpty {
                                 // Dir-segment-only query: score based on path brevity
                                 // (dir segment already verified as literal match in candidate filter)
@@ -2347,11 +2419,24 @@ final class SearchEngine: @unchecked Sendable {
                             }
 
                             let tight = hasBase ? baseWindow : pathWindow
+                            let baseLiteralMatch = hasBase && !qBytes.isEmpty && {
+                                let bnOffset = off + e.bnStart
+                                let bnLength = len - e.bnStart
+                                if let tokens = tokenBytes {
+                                    return containsAllBytes(needles: tokens, haystackOffset: bnOffset, haystackLength: bnLength)
+                                }
+                                return containsBytes(needle: qBytes, haystackOffset: bnOffset, haystackLength: bnLength)
+                            }()
                             // Penalize unmatched basename bytes so tight matches in short
                             // basenames (e.g. "mkfl" → "Makefile") beat sparse matches in
                             // long camelCase basenames (e.g. "...MaskForLocal...").
+                            // Literal substring matches are already precise, which is especially
+                            // important for CJK filenames where a short company/place name can sit
+                            // inside a long document title.
                             let basenameWaste = hasBase ? max(0, bnLen - baseWindow) : 0
-                            let adjBaseScore = baseScore &- basenameWaste &* SC.basenameWastePenalty
+                            let effectiveWaste = baseLiteralMatch ? min(basenameWaste, 8) : basenameWaste
+                            let literalBonus = baseLiteralMatch ? max(SC.rankPrefixMatchBonus, qBytes.count &* scoreMatch) : 0
+                            let adjBaseScore = baseScore &+ literalBonus &- effectiveWaste &* SC.basenameWastePenalty
                             let sTight = Int32(-tight)
                             let sBase = Int32(hasBase ? adjBaseScore : -1000)
                             let sPath = Int32(hasPath ? pathScore : -1000)
@@ -2419,7 +2504,7 @@ final class SearchEngine: @unchecked Sendable {
         if !scored.isEmpty {
             let topQ = scored[0].quality
             let minQ = max(topQ * 4 / 10, qBytes.count * scoreMatch / 2)
-            let filtered = scored.filter { $0.quality >= minQ }
+            let filtered = scored.filter { $0.quality >= minQ || $0.hasBase }
             // If the strict density-based floor kills every match (typical for
             // a dense single-token query like "prvskyl" that legitimately spans
             // multiple path segments — quality = pathScore * qLen / window

@@ -72,6 +72,24 @@ var PRODUCTS: [Any] {
     }
 }
 
+var proactive: Bool {
+    PM.pro?.active == true
+}
+
+@discardableResult
+func invalidReq(_: [Any], _: Any?) -> Bool {
+    false
+}
+
+@discardableResult
+func invalidReq3(_: [Any], _: Any?) -> Bool {
+    false
+}
+
+func validReq() -> Bool {
+    true
+}
+
 // MARK: - AppDelegate
 
 @MainActor

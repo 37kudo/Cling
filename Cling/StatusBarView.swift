@@ -11,6 +11,7 @@ import SwiftUI
 struct StatusBarView: View {
     @Default(.triggerKeys) private var triggerKeys
     @Default(.showAppKey) private var showAppKey
+    @Default(.filesOnlyResults) private var filesOnlyResults
 
     var body: some View {
         let bar = HStack {
@@ -105,6 +106,18 @@ struct StatusBarView: View {
             }
 
             Spacer()
+
+            Button(action: {
+                fuzzy.filesOnlyResults.toggle()
+                filesOnlyResults = fuzzy.filesOnlyResults
+            }) {
+                HStack(spacing: 3) {
+                    Image(systemName: fuzzy.filesOnlyResults ? "doc.fill" : "folder.badge.questionmark")
+                    Text("Files only")
+                }
+            }
+            .buttonStyle(.text(borderColor: .clear, active: fuzzy.filesOnlyResults, activeTint: .blue))
+            .help(fuzzy.filesOnlyResults ? "Showing files only" : "Showing files and folders")
 
             Text("**`\(triggerKeys.shortReadableStr) + \(showAppKey.character)`** to show/hide").padding(.trailing, 2)
 

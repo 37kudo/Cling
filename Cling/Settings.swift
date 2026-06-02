@@ -433,6 +433,7 @@ extension Defaults.Keys {
     static let hiddenActionButtons = Key<[HiddenActionButton]>("hiddenActionButtons", default: [])
     static let folderFilters = Key<[FolderFilter]>("folderFilters", default: DEFAULT_FOLDER_FILTERS)
     static let maxResultsCount = Key<Int>("maxResultsCount", default: 1000)
+    static let filesOnlyResults = Key<Bool>("filesOnlyResults", default: false)
     static let externalVolumes = Key<[FilePath]>("externalVolumes", default: [])
     static let disabledVolumes = Key<[FilePath]>("disabledVolumes", default: [])
     static let indexedVolumePaths = Key<[FilePath]>("indexedVolumePaths", default: [])
