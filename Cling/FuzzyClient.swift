@@ -379,7 +379,7 @@ class FuzzyClient {
         didSet {
             guard !showLiveIndex else { return }
             if suppressNextSearch { suppressNextSearch = false; return }
-            querySendTask = mainAsyncAfter(ms: 150) { [self] in
+            querySendTask = mainAsyncAfter(ms: 350) { [self] in
                 performSearch()
             }
         }
